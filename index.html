@@ -718,6 +718,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
    * 字体 Base64 变量。如果需要 PDF 支持中文，请将字体 Base64 字符串粘贴到此处。
    */
   let FONT_BASE64 = ''; 
+// 使用可靠的 GitHub + jsDelivr 加载微软雅黑 Base64
+fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base64.txt')
+  .then(response => {
+    if (!response.ok) throw new Error('字体加载失败: ' + response.status);
+    return response.text();
+  })
+  .then(data => {
+    FONT_BASE64 = data.trim();
+    console.log('✅ 微软雅黑字体加载成功');
+  })
+  .catch(err => {
+    console.error('❌ 字体加载失败:', err);
+    showToast('⚠️ 中文字体加载失败，PDF 可能显示乱码', true);
+  });
 
   function showToast(message, isError = false) {
     const toast = document.getElementById('toast');
@@ -957,6 +971,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       const units = getDigit(num, 0); 
       const tens = getDigit(num, 1);
       const sum = units + tens; 
+      const sumTail = sum % 10;
       const setCircle = (id, visible) => {
         const el = document.getElementById(`c_${rowIndex}_${id}`);
         if (el) el.style.opacity = visible ? '1' : '0';
@@ -967,11 +982,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       setCircle(4, num < 25);
       setCircle(5, sum % 2 !== 0); 
       setCircle(6, sum % 2 === 0);
-      setCircle(7, sum >= 5); 
-      setCircle(8, sum < 5);
-      setCircle(9, sum >= 7); 
-      setCircle(10, sum >= 3 && sum <= 6);
-      setCircle(11, sum <= 2); 
+      // 合值-大小：尾数1~4为小，5~9为大（0视为小）
+      setCircle(7, sumTail >= 5); // 大
+      setCircle(8, sumTail <= 4); // 小（含0）
+      setCircle(9, sumTail >= 7); // 大
+      setCircle(10, sumTail >= 3 && sumTail <= 6); // 中
+      setCircle(11, sumTail <= 2); // 小（含0）
       setCircle(12, units >= 5);
       setCircle(13, units < 5); 
       setCircle(14, units >= 7);
