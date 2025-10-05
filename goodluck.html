@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>奖号预测表 - PDF导出与冻结表头</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf-autotable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      background-color: #f9f9f9;
+    }
+    .warning-banner {
+      background-color: #e9ecef;
+      color: #495057;
+      padding: 8px;
+      text-align: center;
+      font-weight: bold;
+      font-size: 13px;
+    }
+    .controls-wrapper {
+      position: relative;
+      max-width: 1600px;
+      margin: 10px auto;
+      height: 40px;
+    }
+    .button-group {
+      position: absolute;
+      top: 0;
+      right: 0;
+      display: flex;
+      gap: 8px;
+    }
+    #saveTimestamp {
+      position: absolute;
+      top: 5px;
+      left: 0;
+      font-size: 12px;
+      color: #6c757d;
+    }
+    .table-wrapper {
+      position: relative;
+      display: inline-block;
+      max-width: 1600px;
+      margin: 0 auto;
+      overflow: auto;
+      max-height: 80vh;
+    }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: white;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      table-layout: fixed;
+    }
+    th, td {
+      border: 1px solid #ccc;
+      padding: 4px;
+      text-align: center;
+      font-size: 11px;
+      overflow: hidden;
+      height: 28px;
+    }
+    thead th {
+      background-color: #f8f9fa;
+      z-index: 2;
+    }
+    thead tr:nth-child(1) th {
+      position: sticky;
+      top: 0;
+    }
+    thead tr:nth-child(2) th {
+      position: sticky;
+      top: 37px;
+    }
+    td:nth-child(2), th:nth-child(2) {
+      width: 80px !important;
+    }
+    input[type="number"] {
+      width: 100%;
+      text-align: center;
+      padding: 2px;
+      font-size: 11px;
+      box-sizing: border-box;
+      border: none;
+      background-color: transparent;
+    }
+    .circle {
+      width: 10px;
+      height: 10px;
+      background-color: black;
+      border-radius: 50%;
+      display: inline-block;
+      opacity: 0;
+    }
+    button {
+      padding: 5px 10px;
+      font-size: 12px;
+      cursor: pointer;
+    }
+    #fileInputJson {
+      display: none;
+    }
+    #toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.8);
+      color: white;
+      padding: 8px 16px;
+      border-radius: 4px;
+      font-size: 13px;
+      opacity: 0;
+      transition: opacity 0.3s;
+      pointer-events: none;
+      z-index: 10;
+    }
+    .add-row-btn {
+      display: block;
+      margin: 15px auto;
+      padding: 6px 12px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+<div class="warning-banner">
+  ✅ 功能更新：新增PDF导出（自动分页/含表头/保存时间）、冻结表头、连接“家/野”列。
+</div>
+
+<div class="controls-wrapper">
+  <div id="saveTimestamp"></div>
+  <div class="button-group">
+    <button onclick="exportToPDF()">📄 导出 PDF</button>
+    <button onclick="exportToPNG()">🖼️ 导出图片</button>
+    <button onclick="exportToCSV()">📊 导出 Excel (CSV)</button>
+    <button onclick="saveDataToFile()">💾 保存为 JSON</button>
+    <button onclick="document.getElementById('fileInputJson').click()">📂 加载 JSON</button>
+  </div>
+</div>
+
+<div class="table-wrapper" id="tableWrapper">
+  <table id="dataTable">
+    <thead>
+      <tr>
+        <th rowspan="2">期号</th>
+        <th rowspan="2">奖号</th>
+        <th colspan="2">奖号-单双</th>
+        <th colspan="2">奖号-大小</th>
+        <th colspan="2">合值-单双</th>
+        <th colspan="2">合值-大小</th>
+        <th colspan="3">合值-大中小</th>
+        <th colspan="2">尾数-大小</th>
+        <th colspan="3">尾数-大中小</th>
+        <th colspan="2">尾数-质合</th>
+        <th colspan="2">头数-单双</th>
+        <th colspan="2">头数-质合</th>
+        <th colspan="3">头数-012路</th>
+        <th colspan="3">尾数-012路</th>
+        <th colspan="4">象限</th>
+        <th colspan="3">奖号段</th>
+        <th rowspan="2">红</th>
+        <th rowspan="2">蓝</th>
+        <th rowspan="2">绿</th>
+        <th rowspan="2">家</th>
+        <th rowspan="2">野</th>
+        <th colspan="2">杀头尾</th>
+      </tr>
+      <tr>
+        <th>单</th>
+        <th>双</th>
+        <th>大</th>
+        <th>小</th>
+        <th>单</th>
+        <th>双</th>
+        <th>大</th>
+        <th>小</th>
+        <th>大</th>
+        <th>中</th>
+        <th>小</th>
+        <th>大</th>
+        <th>小</th>
+        <th>大</th>
+        <th>中</th>
+        <th>小</th>
+        <th>质</th>
+        <th>合</th>
+        <th>单</th>
+        <th>双</th>
+        <th>质</th>
+        <th>合</th>
+        <th>0</th>
+        <th>1</th>
+        <th>2</th>
+        <th>0</th>
+        <th>1</th>
+        <th>2</th>
+        <th>1</th>
+        <th>2</th>
+        <th>3</th>
+        <th>4</th>
+        <th>1</th>
+        <th>2</th>
+        <th>3</th>
+        <th>对</th>
+        <th>错</th>
+      </tr>
+    </thead>
+    <tbody id="tableBody">
+    </tbody>
+  </table>
+  <svg id="lineLayer" style="position: absolute; top: 0; left: 0; pointer-events: none; width: 100%; height: 100%;"></svg>
+</div>
+
+<button class="add-row-btn" onclick="addNewRow()">➕ 新增一行</button>
+<input type="file" id="fileInputJson" accept=".json" onchange="loadDataFromFile(event)">
+<div id="toast"></div>
+
+<script>
+  let currentMaxIndex = 277;
+  const STORAGE_KEY = 'lottery_data_v8';
+
+  const GROUPS = [
+    [1, 2], [3, 4], [5, 6], [7, 8], [9, 10, 11],
+    [12, 13], [14, 15, 16], [17, 18], [19, 20], [21, 22],
+    [23, 24, 25], [26, 27, 28], [29, 30, 31, 32],
+    [33, 34, 35], [36, 37, 38], [39, 40], [41, 42]
+  ];
+
+  const rules = {
+    quadrant1: [3,8,10,13,17,22,28,31,33,38,44,47],
+    quadrant2: [2,5,11,16,20,23,25,30,36,39,41,46],
+    quadrant3: [1,6,12,15,19,24,26,29,35,40,42,45],
+    quadrant4: [4,7,9,14,18,21,27,32,34,37,43,48],
+    red: [1,2,7,8,12,13,18,19,23,24,29,30,34,35,40,45,46],
+    blue: [3,4,9,10,14,15,20,25,26,31,36,37,41,42,47,48],
+    green: [5,6,11,16,17,21,22,27,28,32,33,38,39,43,44,49],
+    home: [5,7,8,9,11,12,17,19,20,21,23,24,29,31,32,33,35,36,41,43,44,45,47,48],
+    wild: [1,2,3,4,6,10,13,14,15,16,18,22,25,26,27,28,30,34,37,38,39,40,42,46,49]
+  };
+  
+  let FONT_BASE64 = '';
+  fetch('https://gist.githubusercontent.com/google-gemini-builder/13c631952e411b61731518b8de34b22c/raw/67385f091c1b34a6c429712a801082c3e1e99c15/msyh-normal-base64.txt')
+    .then(response => response.text())
+    .then(data => { FONT_BASE64 = data; console.log("Chinese font loaded for PDF export."); })
+    .catch(err => console.error("Failed to load PDF font:", err));
+
+  function showToast(message, isError = false) {
+    const toast = document.getElementById('toast');
+    toast.textContent = message;
+    toast.style.backgroundColor = isError ? 'rgba(220,53,69,0.9)' : 'rgba(0,0,0,0.8)';
+    toast.style.opacity = '1';
+    setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+  }
+
+  function supportsLocalStorage() {
+    try {
+      const test = '__storage_test__';
+      localStorage.setItem(test, test);
+      localStorage.removeItem(test);
+      return true;
+    } catch(e) {
+      return false;
+    }
+  }
+
+  function saveToStorage(data) {
+    if (supportsLocalStorage()) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      const timestamp = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      localStorage.setItem(STORAGE_KEY + '_timestamp', timestamp);
+      updateTimestampDisplay(timestamp);
+    }
+  }
+  
+  function updateTimestampDisplay(timestamp) {
+    const display = document.getElementById('saveTimestamp');
+    if (display) {
+      display.textContent = `系统自动保存于: ${timestamp || '尚未保存'}`;
+    }
+  }
+
+  function loadFromStorage() {
+    if (supportsLocalStorage()) {
+      updateTimestampDisplay(localStorage.getItem(STORAGE_KEY + '_timestamp'));
+      const saved = localStorage.getItem(STORAGE_KEY);
+      return saved ? JSON.parse(saved) : null;
+    }
+    return null;
+  }
+
+  function addRowToTable(index) {
+    const tbody = document.getElementById('tableBody');
+    const row = document.createElement('tr');
+    row.dataset.index = index;
+    let cells = `<td>${index}</td><td><input type="number" min="1" max="49" onchange="processRow(this)"></td>`;
+    for (let j = 1; j <= 42; j++) {
+      cells += `<td><div class="circle" id="c_${index}_${j}"></div></td>`;
+    }
+    row.innerHTML = cells;
+    tbody.appendChild(row);
+  }
+
+  function getCellPosition(cell) {
+    const tableWrapper = document.getElementById('tableWrapper');
+    const rect = cell.getBoundingClientRect();
+    return {
+      x: rect.left + tableWrapper.scrollLeft - tableWrapper.getBoundingClientRect().left,
+      y: rect.top + tableWrapper.scrollTop - tableWrapper.getBoundingClientRect().top
+    };
+  }
+  
+  function drawAllLines() {
+    const svg = document.getElementById('lineLayer');
+    const table = document.getElementById('dataTable');
+    if (!svg || !table) return;
+
+    svg.style.height = table.scrollHeight + 'px';
+    svg.innerHTML = '';
+
+    const rows = document.querySelectorAll('#tableBody tr');
+    if (rows.length > 1) {
+      for (let i = 0; i < rows.length - 1; i++) {
+        const currentRow = rows[i];
+        const nextRow = rows[i + 1];
+        GROUPS.forEach(group => {
+          const currentPoints = [];
+          const nextPoints = [];
+          for (const col of group) {
+            const circle1 = currentRow.querySelector(`#c_${currentRow.dataset.index}_${col}`);
+            if (circle1 && window.getComputedStyle(circle1).opacity === '1') {
+              const td = circle1.closest('td');
+              if (td) {
+                const pos = getCellPosition(td);
+                currentPoints.push({ x: pos.x + td.offsetWidth / 2, y: pos.y + td.offsetHeight / 2 });
+              }
+            }
+            const circle2 = nextRow.querySelector(`#c_${nextRow.dataset.index}_${col}`);
+            if (circle2 && window.getComputedStyle(circle2).opacity === '1') {
+              const td = circle2.closest('td');
+              if (td) {
+                const pos = getCellPosition(td);
+                nextPoints.push({ x: pos.x + td.offsetWidth / 2, y: pos.y + td.offsetHeight / 2 });
+              }
+            }
+          }
+          if (currentPoints.length > 0 && nextPoints.length > 0) {
+            currentPoints.forEach(p1 => {
+              nextPoints.forEach(p2 => {
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', p1.x); line.setAttribute('y1', p1.y);
+                line.setAttribute('x2', p2.x); line.setAttribute('y2', p2.y);
+                line.setAttribute('stroke', 'black'); line.setAttribute('stroke-width', '1');
+                svg.appendChild(line);
+              });
+            });
+          }
+        });
+      }
+    }
+    
+    const headerRow = table.querySelector('thead tr:last-child');
+    if (!headerRow) return;
+    
+    const headerCells = Array.from(headerRow.querySelectorAll('th'));
+    const allHeaderCells = Array.from(table.querySelectorAll('thead th'));
+
+    const colPositions = [];
+    let currentPos = 0;
+    allHeaderCells.forEach(cell => {
+      if(cell.parentElement === headerRow){
+        colPositions.push(currentPos);
+        currentPos += (cell.colSpan || 1);
+      }
+    });
+
+    GROUPS.forEach(group => {
+      if (group.length === 0) return;
+      const firstColIndex = group[0] - 1 + 2; 
+      const lastColIndex = group[group.length - 1] -1 + 2;
+
+      const firstCell = table.querySelector(`tbody tr:first-child td:nth-child(${firstColIndex + 1})`);
+      const lastCell = table.querySelector(`tbody tr:first-child td:nth-child(${lastColIndex + 1})`);
+
+      if (firstCell && lastCell) {
+        const firstPos = getCellPosition(firstCell);
+        const lastPos = getCellPosition(lastCell);
+        const x1 = firstPos.x;
+        const x2 = lastPos.x + lastCell.offsetWidth;
+        const y1 = 0;
+        const y2 = table.scrollHeight;
+
+        const leftLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        leftLine.setAttribute('x1', x1); leftLine.setAttribute('y1', y1);
+        leftLine.setAttribute('x2', x1); leftLine.setAttribute('y2', y2);
+        leftLine.setAttribute('stroke', '#333'); leftLine.setAttribute('stroke-width', '2');
+        svg.appendChild(leftLine);
+
+        if (group === GROUPS[GROUPS.length -1]) {
+          const rightLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          rightLine.setAttribute('x1', x2); rightLine.setAttribute('y1', y1);
+          rightLine.setAttribute('x2', x2); rightLine.setAttribute('y2', y2);
+          rightLine.setAttribute('stroke', '#333'); rightLine.setAttribute('stroke-width', '2');
+          svg.appendChild(rightLine);
+        }
+      }
+    });
+  }
+
+  function initTable() {
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = '';
+    let data = loadFromStorage() || Array(277).fill(null);
+    data.forEach((val, idx) => {
+      const index = idx + 1;
+      addRowToTable(index);
+      const input = document.querySelector(`#tableBody tr[data-index="${index}"] input`);
+      if (val !== null && !isNaN(val) && val >= 1 && val <= 49) {
+        input.value = val;
+        processRow(input, false);
+      }
+    });
+    currentMaxIndex = data.length;
+    setTimeout(drawAllLines, 200);
+  }
+
+  function addNewRow() {
+    currentMaxIndex++;
+    addRowToTable(currentMaxIndex);
+    const input = document.querySelector(`#tableBody tr[data-index="${currentMaxIndex}"] input`);
+    input.focus();
+    saveCurrentData();
+    setTimeout(drawAllLines, 50);
+    showToast(`✅ 已新增第 ${currentMaxIndex} 期`);
+  }
+
+  function getDigit(num, pos) {
+    return Math.floor(num / Math.pow(10, pos)) % 10;
+  }
+
+  function processRow(input, shouldRedraw = true) {
+    const row = input.closest('tr');
+    const index = parseInt(row.dataset.index);
+    clearRow(index);
+    const num = parseInt(input.value);
+    if (num && num >= 1 && num <= 49) {
+      const units = getDigit(num, 0); 
+      const tens = getDigit(num, 1);
+      const sum = units + tens; 
+      const sumUnits = sum % 10;
+      const setCircle = (id, visible) => {
+        const el = document.getElementById(`c_${index}_${id}`);
+        if (el) el.style.opacity = visible ? '1' : '0';
+      };
+      setCircle(1, units % 2 !== 0); 
+      setCircle(2, units % 2 === 0);
+      setCircle(3, num >= 25); 
+      setCircle(4, num < 25);
+      setCircle(5, sum % 2 !== 0); 
+      setCircle(6, sum % 2 === 0);
+      setCircle(7, sum >= 5); 
+      setCircle(8, sum < 5);
+      setCircle(9, sum >= 7); 
+      setCircle(10, sum >= 3 && sum <= 6);
+      setCircle(11, sum <= 2); 
+      setCircle(12, units >= 5);
+      setCircle(13, units < 5); 
+      setCircle(14, units >= 7);
+      setCircle(15, units >= 3 && units <= 6);
+      setCircle(16, units <= 2);
+      
+      // Fixed: Handle tail number 0 correctly for prime/composite
+      if (units === 0) {
+        // 0 is neither prime nor composite, so mark as composite (合)
+        setCircle(17, false); 
+        setCircle(18, true);
+      } else {
+        setCircle(17, [1,2,3,5,7].includes(units)); 
+        setCircle(18, ![1,2,3,5,7].includes(units));
+      }
+      
+      setCircle(19, tens % 2 !== 0); 
+      setCircle(20, tens % 2 === 0);
+      setCircle(21, [1,2,3,5,7].includes(tens)); 
+      setCircle(22, ![1,2,3,5,7].includes(tens));
+      if (tens % 3 === 0) setCircle(23, true); 
+      else if (tens % 3 === 1) setCircle(24, true); 
+      else setCircle(25, true);
+      if (units % 3 === 0) setCircle(26, true); 
+      else if (units % 3 === 1) setCircle(27, true); 
+      else setCircle(28, true);
+      setCircle(29, rules.quadrant1.includes(num)); 
+      setCircle(30, rules.quadrant2.includes(num));
+      setCircle(31, rules.quadrant3.includes(num)); 
+      setCircle(32, rules.quadrant4.includes(num));
+      setCircle(33, num <= 16); 
+      setCircle(34, num >= 17 && num <= 32); 
+      setCircle(35, num >= 33);
+      setCircle(36, rules.red.includes(num)); 
+      setCircle(37, rules.blue.includes(num));
+      setCircle(38, rules.green.includes(num)); 
+      setCircle(39, rules.home.includes(num));
+      setCircle(40, rules.wild.includes(num));
+      
+      let prevNum = null;
+      const prevRow = row.previousElementSibling;
+      if (prevRow) {
+        const prevInput = prevRow.querySelector('input');
+        if (prevInput && prevInput.value) prevNum = parseInt(prevInput.value);
+      }
+      if (prevNum !== null) {
+        const prevUnits = getDigit(prevNum, 0); 
+        const prevTens = getDigit(prevNum, 1);
+        const hasRepeat = (units === prevUnits || units === prevTens || tens === prevUnits || tens === prevTens);
+        setCircle(41, !hasRepeat); 
+        setCircle(42, hasRepeat);
+      }
+    }
+    saveCurrentData();
+    if (shouldRedraw) setTimeout(drawAllLines, 50);
+  }
+
+  function clearRow(index) {
+    for (let i = 1; i <= 42; i++) {
+      const el = document.getElementById(`c_${index}_${i}`);
+      if (el) el.style.opacity = '0';
+    }
+  }
+
+  function saveCurrentData() {
+    const data = [];
+    document.querySelectorAll('#tableBody tr').forEach(row => {
+      const input = row.querySelector('input');
+      data.push(input.value ? parseInt(input.value) : null);
+    });
+    saveToStorage(data);
+  }
+  
+  async function exportToPNG() {
+    showToast('⏳ 正在生成图片...');
+    const wrapper = document.querySelector('.table-wrapper');
+    wrapper.scrollTo(0, 0);
+
+    const inputs = document.querySelectorAll('td:nth-child(2) input[type="number"]');
+    const tempSpans = [];
+    inputs.forEach(input => {
+      const span = document.createElement('span');
+      span.textContent = input.value;
+      span.style.fontSize = '11px';
+      input.parentElement.appendChild(span);
+      input.style.display = 'none';
+      tempSpans.push(span);
+    });
+
+    try {
+      // Temporarily remove max-height to capture all rows
+      const originalMaxHeight = wrapper.style.maxHeight;
+      wrapper.style.maxHeight = 'none';
+      wrapper.style.height = 'auto';
+      
+      await new Promise(resolve => setTimeout(resolve, 100));
+      const canvas = await html2canvas(wrapper, { 
+        scale: 1.5, 
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        allowTaint: true
+      });
+      
+      // Restore original styling
+      wrapper.style.maxHeight = originalMaxHeight;
+      wrapper.style.height = '';
+      
+      const link = document.createElement('a');
+      link.download = '奖号预测表.png';
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      showToast('✅ 图片导出成功！');
+    } catch (err) {
+      showToast('❌ 导出失败：' + err.message, true);
+    } finally {
+      tempSpans.forEach(span => span.remove());
+      inputs.forEach(input => input.style.display = '');
+    }
+  }
+  
+  async function exportToPDF() {
+    if (!FONT_BASE64) {
+      showToast('❌ PDF导出失败：中文字体尚未加载完成，请稍等或刷新重试。', true);
+      return;
+    }
+    showToast('⏳ 正在生成 PDF，请稍候...');
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'landscape', unit: 'pt' });
+
+      doc.addFileToVFS('msyh.ttf', FONT_BASE64);
+      doc.addFont('msyh.ttf', 'msyh', 'normal');
+      doc.setFont('msyh');
+
+      const lastSavedTime = localStorage.getItem(STORAGE_KEY + '_timestamp') || '从未保存';
+      const headerText = `系统自动保存于: ${lastSavedTime}`;
+      const table = document.getElementById('dataTable');
+
+      // Build table head
+      const head = [];
+      table.querySelectorAll('thead tr').forEach(tr => {
+        const row = [];
+        tr.querySelectorAll('th').forEach(th => {
+          row.push({
+            content: th.innerText,
+            colSpan: th.colSpan,
+            rowSpan: th.rowSpan
+          });
+        });
+        head.push(row);
+      });
+
+      // Build table body with proper circle detection
+      const body = [];
+      table.querySelectorAll('tbody tr').forEach(row => {
+        const rowData = [];
+        row.querySelectorAll('td').forEach((td, i) => {
+          if (i === 0) {
+            rowData.push(td.innerText);
+          } else if (i === 1) {
+            rowData.push(td.querySelector('input').value);
+          } else {
+            // Fixed: Properly check circle visibility
+            const circle = td.querySelector('.circle');
+            const isVisible = circle && window.getComputedStyle(circle).opacity === '1';
+            rowData.push(isVisible ? '●' : '');
+          }
+        });
+        body.push(rowData);
+      });
+
+      doc.autoTable({
+        head: head,
+        body: body,
+        startY: 40,
+        theme: 'grid',
+        showHead: 'everyPage',
+        didDrawPage: function (data) {
+          doc.setFont('msyh');
+          doc.setFontSize(10);
+          doc.text(headerText, data.settings.margin.left, 25);
+        },
+        styles: {
+          font: 'msyh',
+          fontSize: 5.5,
+          cellPadding: 1.5,
+          halign: 'center',
+          valign: 'middle'
+        },
+        headStyles: {
+          font: 'msyh',
+          fontSize: 6,
+          fillColor: [240, 240, 240],
+          textColor: [0, 0, 0],
+          lineWidth: 0.1,
+          lineColor: [150, 150, 150]
+        }
+      });
+
+      doc.save('奖号预测表.pdf');
+      showToast('✅ PDF 导出成功！');
+    } catch (err) {
+      console.error("PDF Export Error:", err);
+      showToast('❌ PDF 导出失败: ' + err.message, true);
+    }
+  }
+
+  function exportToCSV() {
+    try {
+      const table = document.getElementById('dataTable');
+      let csvContent = '';
+      
+      // Add headers
+      const headers = [];
+      table.querySelectorAll('thead tr').forEach((tr, rowIndex) => {
+        if (rowIndex === 0) {
+          // First header row
+          tr.querySelectorAll('th').forEach(th => {
+            const colSpan = th.colSpan || 1;
+            const headerText = th.innerText;
+            for (let i = 0; i < colSpan; i++) {
+              headers.push(headerText);
+            }
+          });
+        }
+      });
+      csvContent += headers.join(',') + '\n';
+      
+      // Add second header row
+      const secondHeaders = [];
+      const secondHeaderRow = table.querySelector('thead tr:nth-child(2)');
+      if (secondHeaderRow) {
+        secondHeaderRow.querySelectorAll('th').forEach(th => {
+          secondHeaders.push(th.innerText);
+        });
+        csvContent += secondHeaders.join(',') + '\n';
+      }
+      
+      // Add data rows
+      table.querySelectorAll('tbody tr').forEach(row => {
+        const rowData = [];
+        row.querySelectorAll('td').forEach((td, i) => {
+          if (i === 0) {
+            rowData.push(td.innerText);
+          } else if (i === 1) {
+            rowData.push(td.querySelector('input').value);
+          } else {
+            const circle = td.querySelector('.circle');
+            const isVisible = circle && window.getComputedStyle(circle).opacity === '1';
+            rowData.push(isVisible ? '●' : '');
+          }
+        });
+        csvContent += rowData.join(',') + '\n';
+      });
+      
+      // Create and download CSV file
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = '奖号预测表.csv';
+      link.click();
+      URL.revokeObjectURL(url);
+      showToast('✅ CSV 导出成功！');
+    } catch (err) {
+      showToast('❌ CSV 导出失败: ' + err.message, true);
+    }
+  }
+
+  function saveDataToFile() {
+    const data = [];
+    document.querySelectorAll('#tableBody tr').forEach(row => {
+      const input = row.querySelector('input');
+      data.push(input.value ? parseInt(input.value) : null);
+    });
+    saveToStorage(data);
+    showToast('✅ 数据已更新至本地缓存！');
+    
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'lottery-data.json';
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('✅ 已开始下载 lottery-data.json');
+  }
+
+  function loadDataFromFile(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        const data = JSON.parse(e.target.result);
+        if (!Array.isArray(data)) throw new Error('无效 JSON 格式');
+        document.getElementById('tableBody').innerHTML = '';
+        data.forEach((val, idx) => {
+          const index = idx + 1;
+          addRowToTable(index);
+          const input = document.querySelector(`#tableBody tr[data-index="${index}"] input`);
+          if (val !== null && !isNaN(val) && val >= 1 && val <= 49) {
+            input.value = val;
+            processRow(input, false);
+          }
+        });
+        currentMaxIndex = data.length;
+        saveToStorage(data);
+        setTimeout(drawAllLines, 200);
+        showToast('✅ JSON 加载成功！');
+      } catch (err) {
+        showToast('❌ 加载失败：' + err.message, true);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  }
+
+  window.addEventListener('load', initTable);
+  window.addEventListener('resize', drawAllLines);
+</script>
+</body>
+</html>
