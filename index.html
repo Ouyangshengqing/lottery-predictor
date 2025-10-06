@@ -556,18 +556,18 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     }
     #toast {
       position: fixed;
-      bottom: 20px;
+      bottom: 80px;
       left: 50%;
       transform: translateX(-50%);
       background: rgba(0,0,0,0.8);
       color: white;
-      padding: 8px 16px;
+      padding: 10px 20px;
       border-radius: 4px;
-      font-size: 13px;
+      font-size: 14px;
       opacity: 0;
       transition: opacity 0.3s;
       pointer-events: none;
-      z-index: 10;
+      z-index: 2000;
     }
     .add-row-btn {
       display: block;
@@ -803,9 +803,35 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       try {
         // 只有在非本地更新的情况下才更新数据
         if (!isLocalUpdate) {
+          // 获取当前表格数据
+          const currentData = [];
+          document.querySelectorAll('#tableBody tr').forEach(row => {
+            const input = row.querySelector('input');
+            currentData.push(input.value ? parseInt(input.value) : null);
+          });
+          
+          // 加载最新数据
           const updatedData = await loadFromStorage();
+          
           if (updatedData && updatedData.length > 0) {
-            renderTable(updatedData);
+            // 比较数据是否有变化
+            let dataChanged = false;
+            if (currentData.length !== updatedData.length) {
+              dataChanged = true;
+            } else {
+              for (let i = 0; i < currentData.length; i++) {
+                if (currentData[i] !== updatedData[i]) {
+                  dataChanged = true;
+                  break;
+                }
+              }
+            }
+            
+            // 只有在数据有变化时才重新渲染表格并显示toast提示
+            if (dataChanged) {
+              renderTable(updatedData);
+              showToast('🔄 数据已更新');
+            }
           }
         }
         // 重置本地更新标志
@@ -843,10 +869,35 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     // 设置新的定时器
     syncDebounceTimer = setTimeout(async () => {
       try {
+        // 获取当前表格数据
+        const currentData = [];
+        document.querySelectorAll('#tableBody tr').forEach(row => {
+          const input = row.querySelector('input');
+          currentData.push(input.value ? parseInt(input.value) : null);
+        });
+        
+        // 加载最新数据
         const updatedData = await loadFromStorage();
+        
         if (updatedData && updatedData.length > 0) {
-          renderTable(updatedData);
-          showToast('🔄 数据已自动同步更新');
+          // 比较数据是否有变化
+          let dataChanged = false;
+          if (currentData.length !== updatedData.length) {
+            dataChanged = true;
+          } else {
+            for (let i = 0; i < currentData.length; i++) {
+              if (currentData[i] !== updatedData[i]) {
+                dataChanged = true;
+                break;
+              }
+            }
+          }
+          
+          // 只有在数据有变化时才重新渲染表格并显示toast提示
+          if (dataChanged) {
+            renderTable(updatedData);
+            showToast('🔄 数据已更新');
+          }
         }
       } catch (error) {
         console.error('同步数据时出错:', error);
@@ -855,8 +906,35 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     }, 300); // 300毫秒的防抖时间
   }
 
-  // 页面卸载时清除定时器，避免内存泄漏
-  window.addEventListener('beforeunload', () => {
+  // 标记数据是否有未保存的更改
+  let hasUnsavedChanges = false;
+  
+  // 监听输入框变化，标记为未保存状态
+  document.addEventListener('input', function(e) {
+    if (e.target.tagName === 'INPUT' && e.target.type === 'number' && e.target.closest('#tableBody')) {
+      hasUnsavedChanges = true;
+    }
+  });
+  
+  // 监听新增行操作，标记为未保存状态
+  document.addEventListener('click', function(e) {
+    if (e.target.closest('.add-row-btn')) {
+      hasUnsavedChanges = true;
+    }
+  });
+  
+  // 页面卸载时检查未保存的更改并清除定时器
+  window.addEventListener('beforeunload', (e) => {
+    if (hasUnsavedChanges) {
+      // 取消默认行为
+      e.preventDefault();
+      // Chrome需要设置returnValue
+      e.returnValue = '您有未保存的数据，确定要离开吗？';
+      // 返回一个字符串作为提示信息（某些浏览器可能会忽略）
+      return '您有未保存的数据，确定要离开吗？';
+    }
+    
+    // 清除定时器，避免内存泄漏
     if (syncDebounceTimer) {
       clearTimeout(syncDebounceTimer);
     }
@@ -864,6 +942,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       clearInterval(wechatUpdateInterval);
     }
   });
+  
+  // 在手动保存成功后重置未保存状态标志
+  function resetUnsavedChangesFlag() {
+    hasUnsavedChanges = false;
+  }
   
   async function setupRealtimeListener() {
     try {
@@ -1047,11 +1130,20 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
   function showToast(message, isError = false) {
     const toast = document.getElementById('toast');
+    // 调试信息，确保函数被调用
+    console.log('showToast called with message:', message);
     toast.textContent = message;
     toast.style.backgroundColor = isError ? 'rgba(220,53,69,0.9)' : 'rgba(0,0,0,0.8)';
     toast.style.opacity = '1';
     setTimeout(() => { toast.style.opacity = '0'; }, 2500);
   }
+
+  // 页面加载时显示测试提示
+  document.addEventListener('DOMContentLoaded', function() {
+    setTimeout(() => {
+      showToast('🎉 页面已成功加载，点击💾 保存数据按钮测试提示功能');
+    }, 1000);
+  });
 
   function supportsLocalStorage() {
     try {
@@ -1351,7 +1443,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     addRowToTable(currentRowCount);
     const input = document.querySelector(`#tableBody tr[data-rowIndex="${currentRowCount}"] input`);
     input.focus();
-    await saveCurrentData();
+    // 移除自动保存，改为手动保存
     setTimeout(drawAllLines, 50);
     showToast(`✅ 已新增第 ${issueNumber} 期`);
   }
@@ -1479,7 +1571,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         setCircle(42, hasRepeat);
       }
     }
-    await saveCurrentData();
+    // 移除自动保存，改为手动保存
     if (shouldRedraw) setTimeout(drawAllLines, 50);
   }
 
@@ -1863,8 +1955,76 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     event.target.value = '';
   }
 
+  // 手动保存数据的函数
+  async function manualSave() {
+    try {
+      // 设置标志，表示这是当前客户端发起的更新
+      isLocalUpdate = true;
+      
+      const data = [];
+      document.querySelectorAll('#tableBody tr').forEach(row => {
+        const input = row.querySelector('input');
+        data.push(input.value ? parseInt(input.value) : null);
+      });
+      
+      await saveToStorage(data);
+      
+      // 保存成功后重置未保存状态标志
+      resetUnsavedChangesFlag();
+      
+      showToast('✅ 数据已成功保存！');
+      
+      // 保存后通知所有用户（通过实时监听机制）
+      // 由于我们已经设置了isLocalUpdate标志，其他用户会通过实时监听接收到更新
+    } catch (error) {
+      console.error('手动保存时出错:', error);
+      showToast('❌ 数据保存失败，请重试', true);
+    }
+  }
+
+  // 在页面底部添加保存按钮
+  function addSaveButton() {
+    const saveButton = document.createElement('button');
+    saveButton.id = 'manualSaveButton';
+    saveButton.textContent = '💾 保存数据';
+    saveButton.onclick = manualSave;
+    
+    // 添加样式，确保在移动端和PC端都有良好的显示效果
+    saveButton.style.position = 'fixed';
+    saveButton.style.bottom = '20px';
+    saveButton.style.left = '50%';
+    saveButton.style.transform = 'translateX(-50%)';
+    saveButton.style.backgroundColor = '#4CAF50';
+    saveButton.style.color = 'white';
+    saveButton.style.border = 'none';
+    saveButton.style.padding = '12px 24px';
+    saveButton.style.borderRadius = '4px';
+    saveButton.style.cursor = 'pointer';
+    saveButton.style.fontSize = '16px';
+    saveButton.style.fontWeight = 'bold';
+    saveButton.style.boxShadow = '0 2px 10px rgba(0,0,0,0.2)';
+    saveButton.style.zIndex = '1000';
+    saveButton.style.transition = 'background-color 0.3s';
+    
+    // 悬停效果
+    saveButton.onmouseover = function() {
+      this.style.backgroundColor = '#45a049';
+    };
+    
+    saveButton.onmouseout = function() {
+      this.style.backgroundColor = '#4CAF50';
+    };
+    
+    // 移动端适配
+    saveButton.style.minWidth = '200px';
+    
+    document.body.appendChild(saveButton);
+  }
+
   window.addEventListener('load', async function() {
     await initTable();
+    // 页面加载完成后添加保存按钮
+    addSaveButton();
   });
   window.addEventListener('resize', drawAllLines);
 </script>
