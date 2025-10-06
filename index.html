@@ -702,6 +702,53 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   const supabaseUrl = 'https://ostbbdubibqorlitztuv.supabase.co';
   const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zdGJiZHViaWJxb3JsaXR6dHV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2Njc1MDAsImV4cCI6MjA3NTI0MzUwMH0.c1y_v8gFb9LJHSlZuGCOg3rvKhXyY1CEkPC7caQMKso';
   const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+  
+  // 用于标记是否是当前客户端发起的更新，避免重复加载
+  let isLocalUpdate = false;
+  
+  // 建立实时数据监听通道
+  let realtimeChannel = null;
+  
+  // 配置实时监听
+  async function setupRealtimeListener() {
+    try {
+      // 取消之前可能存在的通道
+      if (realtimeChannel) {
+        await realtimeChannel.unsubscribe();
+      }
+      
+      // 创建新的监听通道
+      realtimeChannel = supabase
+        .channel('lottery_data_changes')
+        .on('postgres_changes', 
+          { event: '*', schema: 'public', table: TABLE_NAME }, 
+          (payload) => {
+            // 检查是否是由当前客户端发起的更新
+            if (!isLocalUpdate) {
+              console.log('📡 检测到数据更新，正在同步...', payload);
+              // 延迟一下再加载，确保数据已完全写入
+              setTimeout(async () => {
+                const updatedData = await loadFromStorage();
+                if (updatedData && updatedData.length > 0) {
+                  renderTable(updatedData);
+                  showToast('🔄 数据已自动同步更新');
+                }
+              }, 500);
+            }
+            // 重置标志
+            isLocalUpdate = false;
+          }
+        );
+      
+      // 订阅通道
+      await realtimeChannel.subscribe();
+      console.log('✅ 实时数据监听已启动');
+    } catch (error) {
+      console.error('❌ 实时数据监听设置失败:', error);
+      // 可以在失败时重试
+      setTimeout(setupRealtimeListener, 5000);
+    }
+  }
 
   // 表名
   const TABLE_NAME = 'lottery_data';
@@ -825,6 +872,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
   async function saveToStorage(data) {
     try {
+      // 设置标志，表示这是当前客户端发起的更新
+      isLocalUpdate = true;
+      
       // 先将所有记录的is_latest设为false
       await supabase
         .from(TABLE_NAME)
@@ -1071,6 +1121,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         tableWrapper.addEventListener('scroll', drawAllLines);
     }
     setTimeout(drawAllLines, 200);
+    
+    // 启动实时数据监听
+    try {
+      await setupRealtimeListener();
+    } catch (error) {
+      console.error('❌ 初始化实时监听失败:', error);
+      // 不阻止页面加载，继续使用
+    }
   }
 
   async function addNewRow() {
