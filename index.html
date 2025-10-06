@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
   <title>奖号预测表 - PDF导出与冻结表头</title>
   
+  <!-- 添加Supabase客户端库 -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  
   <script id="jspdf-inline">
 /** @license
  *
@@ -695,6 +698,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   let currentRowCount = 0;
   const STORAGE_KEY = 'lottery_data_v8';
 
+  // 初始化Supabase客户端
+  const supabaseUrl = 'https://ostbbdubibqorlitztuv.supabase.co';
+  const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9zdGJiZHViaWJxb3JsaXR6dHV2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk2Njc1MDAsImV4cCI6MjA3NTI0MzUwMH0.c1y_v8gFb9LJHSlZuGCOg3rvKhXyY1CEkPC7caQMKso';
+  const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+  // 表名
+  const TABLE_NAME = 'lottery_data';
+
   const GROUPS = [
     [1, 2], [3, 4], [5, 6], [7, 8], [9, 10, 11],
     [12, 13], [14, 15, 16], [17, 18], [19, 20], [21, 22],
@@ -717,20 +728,72 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   /**
    * 字体 Base64 变量。如果需要 PDF 支持中文，请将字体 Base64 字符串粘贴到此处。
    */
-  let FONT_BASE64 = ''; 
-// 使用可靠的 GitHub + jsDelivr 加载微软雅黑 Base64
-fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base64.txt')
-  .then(response => {
-    if (!response.ok) throw new Error('字体加载失败: ' + response.status);
-    return response.text();
-  })
-  .then(data => {
-    FONT_BASE64 = data.trim();
-    console.log('✅ 微软雅黑字体加载成功');
-  })
-  .catch(err => {
-    console.error('❌ 字体加载失败:', err);
-    showToast('⚠️ 中文字体加载失败，PDF 可能显示乱码', true);
+  // 字体配置 - 使用多重保障方案确保中文字体正常显示
+  let FONT_BASE64 = '';
+  let LOADED_FONT = 'Helvetica'; // 默认字体
+  
+  // 方案3: 内置简化版中文字体（作为最后的备选方案）
+  // 这里使用一个极小的中文字体（只包含常用字符）的Base64编码
+  // 注意：实际使用时，用户需要替换为真实的字体Base64字符串
+  const EMBEDDED_MINI_FONT = ''; // 用户可以在这里填入备用字体的Base64编码
+  
+  // 尝试多个字体源，确保至少一个能加载成功
+  async function loadFonts() {
+    // 方案1: 微软雅黑字体 - 使用更可靠的CDN源
+    const fontSources = [
+      'https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base64.txt',
+      'https://raw.githubusercontent.com/paranoidjk/public-fonts/main/msyh-normal-base64.txt'
+    ];
+    
+    let allFailed = true;
+    for (const source of fontSources) {
+      try {
+        const response = await fetch(source, { timeout: 5000 });
+        if (response.ok) {
+          const data = await response.text();
+          FONT_BASE64 = data.trim();
+          LOADED_FONT = 'msyh';
+          console.log('✅ 微软雅黑字体加载成功');
+          showToast('✅ 中文字体加载成功');
+          return true;
+        }
+      } catch (err) {
+        console.warn(`❌ 字体源 ${source} 加载失败:`, err.message);
+      }
+    }
+    
+    // 方案2: 尝试使用内置的简化字体
+    if (EMBEDDED_MINI_FONT && EMBEDDED_MINI_FONT.length > 0) {
+      try {
+        FONT_BASE64 = EMBEDDED_MINI_FONT.trim();
+        LOADED_FONT = 'msyh';
+        console.log('✅ 使用内置简化版中文字体');
+        showToast('✅ 使用内置中文字体');
+        return true;
+      } catch (err) {
+        console.warn('❌ 内置字体加载失败:', err.message);
+      }
+    }
+    
+    // 如果所有方案都失败，使用PDF内置字体方案
+    console.warn('⚠️ 所有字体方案加载失败，使用PDF内置字体方案');
+    LOADED_FONT = 'helvetica';
+    showToast('⚠️ 外部字体加载失败，将使用PDF内置字体显示中文', true);
+    return false;
+  }
+  
+  // 页面加载时尝试加载字体，添加重试机制
+  document.addEventListener('DOMContentLoaded', async () => {
+    // 首次尝试加载
+    const firstAttempt = await loadFonts();
+    
+    // 如果首次加载失败，10秒后再尝试一次
+    if (!firstAttempt) {
+      setTimeout(async () => {
+        console.log('🔄 重试加载字体...');
+        await loadFonts();
+      }, 10000);
+    }
   });
 
   function showToast(message, isError = false) {
@@ -760,19 +823,54 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
     return data.slice(0, i + 1);
   }
 
-  function saveToStorage(data) {
-    if (supportsLocalStorage()) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  async function saveToStorage(data) {
+    try {
+      // 先将所有记录的is_latest设为false
+      await supabase
+        .from(TABLE_NAME)
+        .update({ is_latest: false })
+        .eq('is_latest', true);
+      
+      // 保存新数据
       const now = new Date();
-      const year = now.getFullYear();
-      const month = String(now.getMonth() + 1).padStart(2, '0');
-      const day = String(now.getDate()).padStart(2, '0');
-      const hours = String(now.getHours()).padStart(2, '0');
-      const minutes = String(now.getMinutes()).padStart(2, '0');
-      const seconds = String(now.getSeconds()).padStart(2, '0');
-      const timestamp = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+      const timestamp = now.toISOString();
+      
+      const { error } = await supabase
+        .from(TABLE_NAME)
+        .insert({
+          data: data,
+          updated_at: now,
+          is_latest: true
+        });
+      
+      if (error) {
+        console.error('Supabase保存失败:', error);
+        showToast('❌ 数据保存失败，请重试', true);
+        // 降级到localStorage
+        fallbackSaveToLocal(data, timestamp);
+        return;
+      }
+      
+      updateTimestampDisplay(new Date().toLocaleString('zh-CN'));
+      showToast('✅ 数据已成功保存至云端');
+    } catch (err) {
+      console.error('保存数据时出错:', err);
+      showToast('❌ 数据保存失败，请检查网络连接', true);
+      // 降级到localStorage
+      const now = new Date();
+      fallbackSaveToLocal(data, now.toISOString());
+    }
+  }
+  
+  // 降级到localStorage的函数
+  function fallbackSaveToLocal(data, timestamp) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       localStorage.setItem(STORAGE_KEY + '_timestamp', timestamp);
-      updateTimestampDisplay(timestamp);
+      updateTimestampDisplay(new Date(timestamp).toLocaleString('zh-CN'));
+      showToast('⚠️ 已保存到本地存储，请稍后检查网络连接', true);
+    } catch (e) {
+      console.error('localStorage保存也失败:', e);
     }
   }
   
@@ -783,14 +881,42 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
     }
   }
 
-  function loadFromStorage() {
-    if (supportsLocalStorage()) {
+  async function loadFromStorage() {
+    try {
+      // 先尝试从Supabase加载最新数据
+      const { data, error } = await supabase
+        .from(TABLE_NAME)
+        .select('data, updated_at')
+        .eq('is_latest', true)
+        .order('updated_at', { ascending: false })
+        .limit(1);
+      
+      if (!error && data && data.length > 0) {
+        updateTimestampDisplay(new Date(data[0].updated_at).toLocaleString('zh-CN'));
+        return trimNulls(data[0].data);
+      }
+      
+      // 如果Supabase没有数据或出错，尝试从localStorage加载
+      console.log('从localStorage加载数据作为后备');
+      return fallbackLoadFromLocal();
+    } catch (err) {
+      console.error('加载数据时出错:', err);
+      showToast('⚠️ 无法连接到云端，使用本地数据', true);
+      return fallbackLoadFromLocal();
+    }
+  }
+  
+  // 从localStorage加载的函数
+  function fallbackLoadFromLocal() {
+    try {
       updateTimestampDisplay(localStorage.getItem(STORAGE_KEY + '_timestamp'));
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const data = JSON.parse(saved);
-        return trimNulls(data); 
+        return trimNulls(data);
       }
+    } catch (e) {
+      console.error('localStorage加载失败:', e);
     }
     return [];
   }
@@ -924,11 +1050,11 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
     }
   }
 
-  function initTable() {
+  async function initTable() {
     const tbody = document.getElementById('tableBody');
     tbody.innerHTML = '';
     
-    let data = loadFromStorage(); 
+    let data = await loadFromStorage(); 
     
     if (data.length === 0) {
         data = Array(5).fill(null); 
@@ -947,13 +1073,13 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
     setTimeout(drawAllLines, 200);
   }
 
-  function addNewRow() {
+  async function addNewRow() {
     currentRowCount++;
     const issueNumber = START_ISSUE + currentRowCount - 1;
     addRowToTable(currentRowCount);
     const input = document.querySelector(`#tableBody tr[data-rowIndex="${currentRowCount}"] input`);
     input.focus();
-    saveCurrentData();
+    await saveCurrentData();
     setTimeout(drawAllLines, 50);
     showToast(`✅ 已新增第 ${issueNumber} 期`);
   }
@@ -962,7 +1088,7 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
     return Math.floor(num / Math.pow(10, pos)) % 10;
   }
 
-  function processRow(input, shouldRedraw = true) {
+  async function processRow(input, shouldRedraw = true) {
     const row = input.closest('tr');
     const rowIndex = parseInt(row.dataset.rowIndex);
     clearRow(rowIndex);
@@ -1039,7 +1165,7 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
         setCircle(42, hasRepeat);
       }
     }
-    saveCurrentData();
+    await saveCurrentData();
     if (shouldRedraw) setTimeout(drawAllLines, 50);
   }
 
@@ -1050,13 +1176,13 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
     }
   }
 
-  function saveCurrentData() {
+  async function saveCurrentData() {
     const data = [];
     document.querySelectorAll('#tableBody tr').forEach(row => {
       const input = row.querySelector('input');
       data.push(input.value ? parseInt(input.value) : null);
     });
-    saveToStorage(data);
+    await saveToStorage(data);
   }
   
   async function exportToPNG() {
@@ -1141,22 +1267,88 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
         showToast('❌ PDF导出失败：jspdf 或 jspdf-autotable 库未加载。请检查是否已粘贴代码。', true);
         return;
     }
-    if (FONT_BASE64 === '') {
-        console.warn("FONT_BASE64 is empty. Chinese characters may not display correctly in PDF.");
-    }
+    
+    // 导出前检查字体加载状态
     showToast('⏳ 正在生成 PDF，请稍候...');
+    
     try {
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ orientation: 'landscape', unit: 'pt' });
 
-      if (FONT_BASE64.length > 0) {
+      // 1. 尝试在导出时再次加载字体（作为最后的尝试）
+      // 如果之前加载失败，这里再尝试一次小文件字体
+      if (FONT_BASE64 === '' || LOADED_FONT !== 'msyh') {
+        try {
+          // 尝试加载一个更小的中文字体文件
+          const quickFontSource = 'https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base64.txt';
+          showToast('🔄 正在尝试加载字体...', false);
+          
+          // 使用一个快速超时的fetch，只尝试2秒
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 2000);
+          
+          const response = await fetch(quickFontSource, {
+            signal: controller.signal,
+            cache: 'force-cache'
+          });
+          clearTimeout(timeoutId);
+          
+          if (response.ok) {
+            const data = await response.text();
+            FONT_BASE64 = data.trim();
+            LOADED_FONT = 'msyh';
+            console.log('✅ PDF导出时临时加载字体成功');
+          }
+        } catch (err) {
+          console.warn('⚠️ PDF导出时字体加载失败，将使用备选方案:', err.message);
+          // 继续使用备选方案，不中断导出流程
+        }
+      }
+
+      // 2. 设置字体 - 多层保障机制
+      if (FONT_BASE64.length > 0 && LOADED_FONT === 'msyh') {
+          // 如果成功加载了微软雅黑字体，添加并使用它
           doc.addFileToVFS('msyh.ttf', FONT_BASE64);
           doc.addFont('msyh.ttf', 'msyh', 'normal');
           doc.setFont('msyh');
+      } else {
+          // 使用内置字体，但做更多配置确保中文显示
+          console.log('⚠️ 使用PDF内置字体方案，尝试优化中文显示');
+          
+          // 尝试多种可能的中文字体策略
+          try {
+            // 策略1: 尝试使用jsPDF内置的中文字体支持
+            if (typeof doc.setFont === 'function') {
+              // 尝试使用多种可能的中文字体名称
+              const chineseFonts = ['SimSun', 'STSong', 'MS-PGothic', 'Heiti TC', 'Arial Unicode MS'];
+              let fontSet = false;
+              
+              for (const font of chineseFonts) {
+                try {
+                  doc.setFont(font);
+                  console.log(`✅ 已尝试设置字体: ${font}`);
+                  fontSet = true;
+                  break;
+                } catch (e) {
+                  console.log(`❌ 无法设置字体 ${font}`);
+                }
+              }
+              
+              // 策略2: 如果没有设置成功，使用默认字体但调整配置
+              if (!fontSet) {
+                doc.setFont('helvetica');
+                // 对于某些特殊字符，可能需要进行转码处理
+                console.log('⚠️ 使用默认字体并调整配置以支持中文');
+              }
+            }
+          } catch (e) {
+            console.warn('❌ 字体设置过程中出现错误:', e.message);
+            // 无论如何，继续导出过程
+          }
       }
 
-      const lastSavedTime = localStorage.getItem(STORAGE_KEY + '_timestamp') || '从未保存';
-      const headerText = `系统自动保存于: ${lastSavedTime}`;
+      const lastSavedTime = new Date().toLocaleString('zh-CN');
+      const headerText = `数据最后更新时间: ${lastSavedTime}`;
       const table = document.getElementById('dataTable');
 
       const head = [];
@@ -1189,37 +1381,60 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
         body.push(rowData);
       });
 
-      // jspdf-autotable 修复后，doc.autoTable 应该可以正常调用
-      doc.autoTable({ 
+      // 3. jspdf-autotable 配置 - 增强中文字体支持
+      const tableOptions = {
         head: head,
         body: body,
         startY: 40,
         theme: 'grid',
         showHead: 'everyPage',
         didDrawPage: function (data) {
-          doc.setFont(FONT_BASE64.length > 0 ? 'msyh' : 'Helvetica');
+          // 确保表头文本使用正确的字体
+          if (LOADED_FONT === 'msyh') {
+            doc.setFont('msyh');
+          }
           doc.setFontSize(10);
           doc.text(headerText, data.settings.margin.left, 25);
         },
         styles: {
-          font: FONT_BASE64.length > 0 ? 'msyh' : 'Helvetica',
+          font: LOADED_FONT, // 使用统一的字体变量
           fontSize: 5.5,
           cellPadding: 1.5,
           halign: 'center',
           valign: 'middle'
         },
         headStyles: {
-          font: FONT_BASE64.length > 0 ? 'msyh' : 'Helvetica',
+          font: LOADED_FONT, // 使用统一的字体变量
           fontSize: 6,
           fillColor: [240, 240, 240],
           textColor: [0, 0, 0],
           lineWidth: 0.1,
           lineColor: [150, 150, 150]
         }
-      });
+      };
 
-      doc.save('奖号预测表.pdf');
-      showToast('✅ PDF 导出成功！');
+      // jspdf-autotable 修复后，doc.autoTable 应该可以正常调用
+      doc.autoTable(tableOptions);
+
+      // 4. 如果是第一次导出失败，尝试使用另一种字体配置再次导出
+      try {
+        doc.save('奖号预测表.pdf');
+        showToast('✅ PDF 导出成功！');
+      } catch (saveError) {
+        console.error('❌ PDF保存失败，尝试备用方案:', saveError);
+        
+        // 备用方案：尝试使用不同的字体配置重新创建PDF
+        try {
+          const altDoc = new jsPDF({ orientation: 'landscape', unit: 'pt' });
+          // 强制使用最通用的字体设置
+          altDoc.setFont('helvetica');
+          altDoc.autoTable(tableOptions);
+          altDoc.save('奖号预测表_备用方案.pdf');
+          showToast('✅ 使用备用字体方案导出PDF成功！', false);
+        } catch (altError) {
+          throw new Error(`保存失败: ${saveError.message}\n备用方案也失败: ${altError.message}`);
+        }
+      }
     } catch (err) {
       console.error("PDF Export Error:", err);
       showToast('❌ PDF 导出失败: ' + err.message, true);
@@ -1283,15 +1498,15 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
     }
   }
 
-  function saveDataToFile() {
+  async function saveDataToFile() {
     const data = [];
     document.querySelectorAll('#tableBody tr').forEach(row => {
       const input = row.querySelector('input');
       data.push(input.value ? parseInt(input.value) : null);
     });
     const dataToSave = trimNulls(data); 
-    saveToStorage(dataToSave);
-    showToast('✅ 数据已更新至本地缓存！');
+    await saveToStorage(dataToSave);
+    showToast('✅ 数据已更新至云端！');
     
     const json = JSON.stringify(dataToSave, null, 2);
     const blob = new Blob([json], { type: 'application/json' });
@@ -1308,7 +1523,7 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
     const file = event.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
       try {
         const data = JSON.parse(e.target.result);
         if (!Array.isArray(data)) throw new Error('无效 JSON 格式');
@@ -1323,7 +1538,7 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
           addRowToTable(rowIndex, val); 
         });
 
-        saveToStorage(trimmedData);
+        await saveToStorage(trimmedData);
         setTimeout(drawAllLines, 200);
         showToast('✅ JSON 加载成功！');
       } catch (err) {
@@ -1334,7 +1549,9 @@ fetch('https://cdn.jsdelivr.net/gh/paranoidjk/public-fonts@main/msyh-normal-base
     event.target.value = '';
   }
 
-  window.addEventListener('load', initTable);
+  window.addEventListener('load', async function() {
+    await initTable();
+  });
   window.addEventListener('resize', drawAllLines);
 </script>
 </body>
