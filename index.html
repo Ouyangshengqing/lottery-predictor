@@ -689,8 +689,77 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   <svg id="lineLayer" style="position: absolute; top: 0; left: 0; pointer-events: none; width: 100%; height: 100%;"></svg>
 </div>
 
-<button class="add-row-btn" onclick="addNewRow()">➕ 新增一行</button>
-<input type="file" id="fileInputJson" accept=".json" onchange="loadDataFromFile(event)">
+<style>
+  .clear-all-btn {
+    background-color: #f44336;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    margin: 0 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+    min-width: 100px;
+  }
+  
+  .clear-all-btn:hover {
+    background-color: #d32f2f;
+  }
+  
+  .clear-all-btn:active {
+    background-color: #b71c1c;
+  }
+  
+  .add-row-btn {
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    padding: 8px 16px;
+    margin: 0 10px 0 0;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: background-color 0.3s;
+    min-width: 100px;
+  }
+  
+  .btn-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 10px 0;
+    align-items: center;
+  }
+  
+  #fileInputJson {
+    margin: 0 10px;
+  }
+  
+  /* 移动端响应式样式 */
+  @media (max-width: 768px) {
+    .btn-group {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    
+    .add-row-btn, .clear-all-btn {
+      margin: 5px 0;
+      width: 100%;
+    }
+    
+    #fileInputJson {
+      margin: 5px 0;
+      width: 100%;
+    }
+  }
+</style>
+
+<div class="btn-group">
+  <button class="add-row-btn" onclick="addNewRow()">➕ 新增一行</button>
+  <input type="file" id="fileInputJson" accept=".json" onchange="loadDataFromFile(event)">
+  <button class="clear-all-btn" onclick="clearAllData()">🗑️ 全部删除</button>
+</div>
 <div id="toast"></div>
 
 <script>
@@ -710,43 +779,176 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   let realtimeChannel = null;
   
   // 配置实时监听
+  let syncDebounceTimer = null;
+  let retryAttempt = 0;
+  const MAX_RETRY_ATTEMPTS = 5;
+  
+  // 检测是否在微信环境中
+  function isWechatEnvironment() {
+    const ua = navigator.userAgent.toLowerCase();
+    return ua.indexOf('micromessenger') !== -1;
+  }
+
+  // 微信环境专用的定时更新函数
+  let wechatUpdateInterval = null;
+  
+  function startWechatUpdateInterval() {
+    // 清除之前可能存在的定时器
+    if (wechatUpdateInterval) {
+      clearInterval(wechatUpdateInterval);
+    }
+    
+    // 设置0.1秒的更新间隔
+    wechatUpdateInterval = setInterval(async () => {
+      try {
+        // 只有在非本地更新的情况下才更新数据
+        if (!isLocalUpdate) {
+          const updatedData = await loadFromStorage();
+          if (updatedData && updatedData.length > 0) {
+            renderTable(updatedData);
+          }
+        }
+        // 重置本地更新标志
+        isLocalUpdate = false;
+      } catch (error) {
+        console.error('微信环境同步数据时出错:', error);
+      }
+    }, 100); // 0.1秒的更新间隔
+    
+    console.log('⏱️ 微信环境定时更新已启动');
+  }
+
+  // 渲染表格数据的函数
+  function renderTable(data) {
+    const tbody = document.getElementById('tableBody');
+    tbody.innerHTML = '';
+    
+    currentRowCount = data.length;
+    data.forEach((val, idx) => {
+      const rowIndex = idx + 1;
+      addRowToTable(rowIndex, val);
+    });
+    
+    // 重新绘制线条
+    setTimeout(drawAllLines, 50);
+  }
+
+  // 同步数据的防抖函数
+  function debouncedSyncData() {
+    // 清除之前的定时器
+    if (syncDebounceTimer) {
+      clearTimeout(syncDebounceTimer);
+    }
+    
+    // 设置新的定时器
+    syncDebounceTimer = setTimeout(async () => {
+      try {
+        const updatedData = await loadFromStorage();
+        if (updatedData && updatedData.length > 0) {
+          renderTable(updatedData);
+          showToast('🔄 数据已自动同步更新');
+        }
+      } catch (error) {
+        console.error('同步数据时出错:', error);
+        showToast('⚠️ 数据同步失败，请刷新页面重试', true);
+      }
+    }, 300); // 300毫秒的防抖时间
+  }
+
+  // 页面卸载时清除定时器，避免内存泄漏
+  window.addEventListener('beforeunload', () => {
+    if (syncDebounceTimer) {
+      clearTimeout(syncDebounceTimer);
+    }
+    if (wechatUpdateInterval) {
+      clearInterval(wechatUpdateInterval);
+    }
+  });
+  
   async function setupRealtimeListener() {
     try {
+      // 检测是否在微信环境中
+      if (isWechatEnvironment()) {
+        console.log('📱 检测到微信环境，启用0.1秒更新模式');
+        
+        // 在微信环境中，使用定时更新而不是实时监听
+        startWechatUpdateInterval();
+        showToast('⏱️ 微信环境数据实时更新已启用', false, 2000);
+        
+        // 不要执行下面的实时监听逻辑
+        return;
+      }
+      
+      // 重置重试计数
+      retryAttempt = 0;
+      
       // 取消之前可能存在的通道
       if (realtimeChannel) {
-        await realtimeChannel.unsubscribe();
+        try {
+          await realtimeChannel.unsubscribe();
+        } catch (e) {
+          console.warn('取消旧通道订阅时出错:', e);
+        }
       }
       
       // 创建新的监听通道
       realtimeChannel = supabase
-        .channel('lottery_data_changes')
+        .channel('lottery_data_changes', {
+          config: {
+            broadcast: { self: false }, // 不接收自己发送的消息
+            presence: { key: 'lottery_app' }
+          }
+        })
         .on('postgres_changes', 
           { event: '*', schema: 'public', table: TABLE_NAME }, 
           (payload) => {
             // 检查是否是由当前客户端发起的更新
             if (!isLocalUpdate) {
-              console.log('📡 检测到数据更新，正在同步...', payload);
-              // 延迟一下再加载，确保数据已完全写入
-              setTimeout(async () => {
-                const updatedData = await loadFromStorage();
-                if (updatedData && updatedData.length > 0) {
-                  renderTable(updatedData);
-                  showToast('🔄 数据已自动同步更新');
-                }
-              }, 500);
+              console.log('📡 检测到数据更新，准备同步...', payload.eventType);
+              // 使用防抖函数避免短时间内多次触发
+              debouncedSyncData();
             }
             // 重置标志
             isLocalUpdate = false;
           }
-        );
+        )
+        .on('error', (event) => {
+          console.error('实时通道错误:', event);
+          // 错误发生时自动重试
+          handleReconnect();
+        })
+        .on('close', () => {
+          console.warn('实时通道已关闭');
+          // 通道关闭时自动重试
+          handleReconnect();
+        });
       
       // 订阅通道
-      await realtimeChannel.subscribe();
+      const { error } = await realtimeChannel.subscribe();
+      
+      if (error) {
+        throw error;
+      }
+      
       console.log('✅ 实时数据监听已启动');
+      showToast('🔌 实时连接已建立', false, 2000);
     } catch (error) {
       console.error('❌ 实时数据监听设置失败:', error);
-      // 可以在失败时重试
-      setTimeout(setupRealtimeListener, 5000);
+      handleReconnect();
+    }
+  }
+  
+  // 处理重连逻辑
+  function handleReconnect() {
+    if (retryAttempt < MAX_RETRY_ATTEMPTS) {
+      retryAttempt++;
+      // 指数退避策略 - 每次重试间隔递增
+      const retryDelay = Math.min(1000 * Math.pow(2, retryAttempt), 30000); // 最大30秒
+      console.log(`⏳ 尝试重连... (第${retryAttempt}/${MAX_RETRY_ATTEMPTS}次，延迟${retryDelay}ms)`);
+      setTimeout(setupRealtimeListener, retryDelay);
+    } else {
+      console.error('❌ 达到最大重连次数，停止尝试');
+      showToast('⚠️ 实时连接已断开，请刷新页面', true);
     }
   }
 
@@ -943,6 +1145,18 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       
       if (!error && data && data.length > 0) {
         updateTimestampDisplay(new Date(data[0].updated_at).toLocaleString('zh-CN'));
+        
+        // 成功从云端加载数据后，清理本地缓存，避免旧数据被上传
+        if (supportsLocalStorage()) {
+          try {
+            localStorage.removeItem(STORAGE_KEY);
+            localStorage.removeItem(STORAGE_KEY + '_timestamp');
+            console.log('✅ 本地缓存已清理');
+          } catch (e) {
+            console.error('清理本地缓存时出错:', e);
+          }
+        }
+        
         return trimNulls(data[0].data);
       }
       
@@ -1140,6 +1354,48 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     await saveCurrentData();
     setTimeout(drawAllLines, 50);
     showToast(`✅ 已新增第 ${issueNumber} 期`);
+  }
+  
+  // 全部删除功能
+  async function clearAllData() {
+    // 弹出确认对话框，防止误操作
+    if (!confirm('⚠️ 确定要删除所有数据吗？此操作不可撤销！')) {
+      return;
+    }
+    
+    try {
+      // 设置标志，表示这是当前客户端发起的更新
+      isLocalUpdate = true;
+      
+      // 清空表格内容
+      const tbody = document.getElementById('tableBody');
+      tbody.innerHTML = '';
+      
+      // 重置行数计数器
+      currentRowCount = 0;
+      
+      // 保存空数据到Supabase和localStorage
+      await saveToStorage([]);
+      
+      // 清理本地缓存
+      if (supportsLocalStorage()) {
+        try {
+          localStorage.removeItem(STORAGE_KEY);
+          localStorage.removeItem(STORAGE_KEY + '_timestamp');
+        } catch (e) {
+          console.error('清理本地缓存时出错:', e);
+        }
+      }
+      
+      // 重新初始化表格，显示默认的空行
+      await initTable();
+      
+      showToast('✅ 所有数据已成功清除');
+      console.log('✅ 所有数据已成功清除');
+    } catch (error) {
+      console.error('删除所有数据时出错:', error);
+      showToast('❌ 数据清除失败，请重试', true);
+    }
   }
 
   function getDigit(num, pos) {
