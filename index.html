@@ -8,6 +8,9 @@
   <!-- 添加Supabase客户端库 -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   
+  <!-- 添加Chart.js库用于数据可视化 -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+  
   <script id="jspdf-inline">
 /** @license
  *
@@ -599,12 +602,113 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       }
     }
   </style>
+  <style>
+    /* 菜单栏样式 */
+    .navbar {
+      background-color: #333;
+      overflow: hidden;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1001;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    .navbar a {
+      float: left;
+      display: block;
+      color: #f2f2f2;
+      text-align: center;
+      padding: 14px 16px;
+      text-decoration: none;
+      font-size: 16px;
+      transition: background-color 0.3s;
+    }
+    
+    .navbar a:hover {
+      background-color: #ddd;
+      color: black;
+    }
+    
+    .navbar a.active {
+      background-color: #4CAF50;
+      color: white;
+    }
+    
+    /* 连接状态指示器 */
+    .connection-status {
+      float: right;
+      display: flex;
+      align-items: center;
+      padding: 14px 16px;
+      color: white;
+      font-size: 14px;
+    }
+    
+    .status-indicator {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      margin-right: 8px;
+      animation: pulse 2s infinite;
+    }
+    
+    .status-indicator.connected {
+      background-color: #4CAF50;
+    }
+    
+    .status-indicator.disconnected {
+      background-color: #f44336;
+    }
+    
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+    
+    /* 页面容器样式 */
+    .page-container {
+      padding-top: 50px;
+      display: none;
+    }
+    
+    .page-container.active {
+      display: block;
+    }
+    
+    /* 移动端适配 */
+    @media (max-width: 768px) {
+      .navbar a {
+        padding: 10px;
+        font-size: 14px;
+      }
+      
+      .connection-status {
+        font-size: 12px;
+        padding: 10px;
+      }
+      
+      .page-container {
+        padding-top: 45px;
+      }
+    }
+  </style>
 </head>
 <body>
-<div class="warning-banner">
-  ⚠️ **请务必将上方三个 CDN 链接中的内容粘贴到对应的脚本块内，否则 PDF/图片导出将失败。**
+<!-- 菜单栏 -->
+<div class="navbar">
+  <a href="#" class="active" onclick="switchPage('table-page')">表格首页</a>
+  <a href="#" onclick="switchPage('trend-page')">趋势分析与预测</a>
+  <div class="connection-status">
+    <span class="status-indicator" id="statusIndicator"></span>
+    <span id="connectionText">连接中...</span>
+  </div>
 </div>
 
+<!-- 表格首页 -->
+<div id="table-page" class="page-container active">
 <div class="controls-wrapper">
   <div id="saveTimestamp"></div>
   <div class="button-group">
@@ -2021,12 +2125,1894 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     document.body.appendChild(saveButton);
   }
 
-  window.addEventListener('load', async function() {
+  // 页面切换函数
+  function switchPage(pageId) {
+    // 隐藏所有页面
+    document.querySelectorAll('.page-container').forEach(page => {
+      page.classList.remove('active');
+    });
+    
+    // 移除所有导航链接的活动状态
+    document.querySelectorAll('.navbar a').forEach(link => {
+      link.classList.remove('active');
+    });
+    
+    // 显示选中的页面
+    const selectedPage = document.getElementById(pageId);
+    if (selectedPage) {
+      selectedPage.classList.add('active');
+    }
+    
+    // 设置选中导航链接的活动状态
+    const activeLink = event.target;
+    if (activeLink) {
+      activeLink.classList.add('active');
+    }
+    
+    // 如果切换到趋势分析页面，需要初始化数据
+    if (pageId === 'trend-page') {
+      initTrendAnalysis();
+    }
+  }
+  
+  // 更新连接状态显示
+  function updateConnectionStatus(isConnected) {
+    const statusIndicator = document.getElementById('statusIndicator');
+    const connectionText = document.getElementById('connectionText');
+    
+    if (isConnected) {
+      statusIndicator.classList.remove('disconnected');
+      statusIndicator.classList.add('connected');
+      connectionText.textContent = '连接成功';
+    } else {
+      statusIndicator.classList.remove('connected');
+      statusIndicator.classList.add('disconnected');
+      connectionText.textContent = '连接失败';
+    }
+  }
+  
+  // 初始化趋势分析页面
+  async function initTrendAnalysis() {
+    try {
+      const data = await loadFromStorage();
+      if (data && data.length > 0) {
+        analyzeAndPredict(data);
+      } else {
+        document.getElementById('analysis-results').innerHTML = '<p>暂无数据进行分析</p>';
+      }
+    } catch (error) {
+      console.error('初始化趋势分析时出错:', error);
+      document.getElementById('analysis-results').innerHTML = `<p style="color: red;">分析时出错: ${error.message}</p>`;
+    }
+  }
+  
+  // 分析数据并进行预测
+  function analyzeAndPredict(data) {
+    // 过滤掉null值
+    const validData = data.filter(num => num !== null);
+    
+    // 统计每个数字出现的次数
+    const frequency = {};
+    for (let i = 1; i <= 49; i++) {
+      frequency[i] = 0;
+    }
+    
+    validData.forEach(num => {
+      if (frequency.hasOwnProperty(num)) {
+        frequency[num]++;
+      }
+    });
+    
+    // 计算出现概率
+    const probability = {};
+    const totalDraws = validData.length;
+    for (let i = 1; i <= 49; i++) {
+      probability[i] = (frequency[i] / totalDraws * 100).toFixed(2);
+    }
+    
+    // 找出最常出现的数字（热门数字）
+    const sortedByFrequency = Object.entries(frequency)
+      .sort(([,a], [,b]) => b - a)
+      .slice(0, 10);
+    
+    // 找出最不常出现的数字（冷门数字）
+    const sortedByFrequencyAsc = Object.entries(frequency)
+      .sort(([,a], [,b]) => a - b)
+      .slice(0, 10);
+    
+    // 分析单双数据
+    const singleDoubleStats = analyzeSingleDouble(validData);
+    
+    // 分析大小数据
+    const sizeStats = analyzeSize(validData);
+    
+    // 分析大中小数据
+    const largeMediumSmallStats = analyzeLargeMediumSmall(validData);
+    
+    // 分析质合数据
+    const primeCompositeStats = analyzePrimeComposite(validData);
+    
+    // 分析012路数据
+    const road012Stats = analyze012Road(validData);
+    
+    // 分析象限与奖号段数据
+    const quadrantAndRangeStats = analyzeQuadrantAndNumberRange(validData);
+    
+    // 分析其他数据（红蓝绿、家野、杀头尾）
+    const otherStats = analyzeOthers(validData);
+    
+    // 分析最近几期的趋势变化
+    const recentTrend = analyzeRecentTrend(validData.slice(-10));
+    
+    // 1. 频率预测：选择出现频率最高的号码
+    const frequencyPrediction = frequencyPredictionMethod(validData, frequency);
+    
+    // 2. 热号与冷号预测：选择近期热门且符合冷号回补趋势的号码
+    const hotColdPrediction = hotColdPredictionMethod(validData, sortedByFrequency, sortedByFrequencyAsc);
+    
+    // 3. 号码间隔预测：分析近期号码间隔模式进行预测
+    const intervalPrediction = intervalPredictionMethod(validData);
+    
+    // 4. 伪随机数拟合：使用伪随机数生成算法结合历史数据特征
+    const pseudoRandomPrediction = pseudoRandomPredictionMethod(validData, sortedByFrequency, recentTrend);
+    
+    // 5. 外部信息规律预测：结合常见的彩票规律进行预测
+    const externalPatternPrediction = externalPatternPredictionMethod(validData, singleDoubleStats, sizeStats);
+    
+    // 汇总所有预测结果，计算每个号码的预测次数
+    const predictionSummary = {};
+    const allPredictions = [
+      { type: '频率预测', number: frequencyPrediction.number, probability: frequencyPrediction.probability },
+      { type: '热号冷号预测', number: hotColdPrediction.number, probability: hotColdPrediction.probability },
+      { type: '号码间隔预测', number: intervalPrediction.number, probability: intervalPrediction.probability },
+      { type: '伪随机数拟合', number: pseudoRandomPrediction.number, probability: pseudoRandomPrediction.probability },
+      { type: '外部规律预测', number: externalPatternPrediction.number, probability: externalPatternPrediction.probability }
+    ];
+    
+    // 统计每个号码被预测的次数
+    allPredictions.forEach(pred => {
+      if (pred.number !== undefined && pred.number !== null) {
+        if (!predictionSummary[pred.number]) {
+          predictionSummary[pred.number] = {
+            count: 0,
+            totalProbability: 0,
+            predictions: []
+          };
+        }
+        predictionSummary[pred.number].count++;
+        predictionSummary[pred.number].totalProbability += parseFloat(pred.probability);
+        predictionSummary[pred.number].predictions.push(pred.type);
+      }
+    });
+    
+    // 找出最大概率出现的奖号
+    let maxProbabilityNumber = null;
+    let maxProbability = 0;
+    
+    Object.entries(predictionSummary).forEach(([num, info]) => {
+      const avgProbability = (info.totalProbability / info.count).toFixed(2);
+      const combinedProbability = ((info.count / 5) * 50 + parseFloat(avgProbability)).toFixed(2); // 50%权重给预测次数，50%权重给平均概率
+      
+      if (parseFloat(combinedProbability) > maxProbability) {
+        maxProbability = parseFloat(combinedProbability);
+        maxProbabilityNumber = parseInt(num);
+      }
+    });
+    
+    // 生成预测分析结果
+    let predictionAnalysis = '';
+    allPredictions.forEach((pred, index) => {
+      if (pred.number !== undefined && pred.number !== null) {
+        const analysis = analyzeNumber(pred.number);
+        predictionAnalysis += `第${index + 1}种方法(${pred.type}): ${pred.number} (${pred.probability}%) - ${analysis}${index < allPredictions.length - 1 ? '<br>' : ''}`;
+      } else {
+        predictionAnalysis += `第${index + 1}种方法(${pred.type}): 生成失败 ${index < allPredictions.length - 1 ? '<br>' : ''}`;
+      }
+    });
+    
+    // 生成结构化分析结果HTML
+    let analysisHtml = `
+      <div class="analysis-summary">
+        <h3>📊 分析结果摘要</h3>
+        <div class="structured-analysis">
+          <div class="analysis-section">
+            <h4>1. 整体数据分析</h4>
+            <ul>
+              <li>总共有 <strong>${totalDraws}</strong> 期有效数据</li>
+              <li>号码覆盖范围: 最小 ${Math.min(...validData)}，最大 ${Math.max(...validData)}</li>
+              <li>号码出现总次数: ${Object.values(frequency).reduce((a, b) => a + b, 0)} 次</li>
+            </ul>
+          </div>
+          
+          <div class="analysis-section">
+            <h4>2. 单双分析</h4>
+            <ul>
+              <li><strong>分析原因:</strong> 单双分布是彩票号码的基本属性之一，研究其规律有助于把握号码出现的基本特征。</li>
+              <li><strong>奖号单双:</strong> 单 ${singleDoubleStats.number.single} 个 (${singleDoubleStats.number.singlePercent}%), 双 ${singleDoubleStats.number.double} 个 (${singleDoubleStats.number.doublePercent}%)</li>
+              <li><strong>合值单双:</strong> 单 ${singleDoubleStats.sum.single} 个 (${singleDoubleStats.sum.singlePercent}%), 双 ${singleDoubleStats.sum.double} 个 (${singleDoubleStats.sum.doublePercent}%)</li>
+              <li><strong>尾数单双:</strong> 单 ${singleDoubleStats.lastDigit.single} 个 (${singleDoubleStats.lastDigit.singlePercent}%), 双 ${singleDoubleStats.lastDigit.double} 个 (${singleDoubleStats.lastDigit.doublePercent}%)</li>
+              <li><strong>头数单双:</strong> 单 ${singleDoubleStats.firstDigit.single} 个 (${singleDoubleStats.firstDigit.singlePercent}%), 双 ${singleDoubleStats.firstDigit.double} 个 (${singleDoubleStats.firstDigit.doublePercent}%)</li>
+              <li><strong>分析过程:</strong> 对每一个奖号分别计算其本身、合值、尾数、头数的单双属性，并统计各类别的数量和占比。</li>
+              <li><strong>分析总结:</strong> ${singleDoubleStats.summary}</li>
+            </ul>
+          </div>
+          
+          <div class="analysis-section">
+            <h4>3. 大小分析</h4>
+            <ul>
+              <li><strong>分析原因:</strong> 大小分布反映了号码在数值范围上的集中趋势，有助于判断下一期可能出现的数值区间。</li>
+              <li><strong>奖号大小:</strong> 小 ${sizeStats.number.small} 个 (${sizeStats.number.smallPercent}%), 大 ${sizeStats.number.large} 个 (${sizeStats.number.largePercent}%)</li>
+              <li><strong>合值大小:</strong> 小 ${sizeStats.sum.small} 个 (${sizeStats.sum.smallPercent}%), 大 ${sizeStats.sum.large} 个 (${sizeStats.sum.largePercent}%)</li>
+              <li><strong>尾数大小:</strong> 小 ${sizeStats.lastDigit.small} 个 (${sizeStats.lastDigit.smallPercent}%), 大 ${sizeStats.lastDigit.large} 个 (${sizeStats.lastDigit.largePercent}%)</li>
+              <li><strong>分析过程:</strong> 对每一个奖号分别计算其本身、合值、尾数的大小属性，并统计各类别的数量和占比。</li>
+              <li><strong>分析总结:</strong> ${sizeStats.summary}</li>
+            </ul>
+          </div>
+          
+          <div class="analysis-section">
+            <h4>4. 大中小分析</h4>
+            <ul>
+              <li><strong>分析原因:</strong> 大中小分类比单纯的大小分类更细致，能够更精确地把握号码的分布特征。</li>
+              <li><strong>合值大中小:</strong> 小 ${largeMediumSmallStats.sum.small} 个 (${largeMediumSmallStats.sum.smallPercent}%), 中 ${largeMediumSmallStats.sum.medium} 个 (${largeMediumSmallStats.sum.mediumPercent}%), 大 ${largeMediumSmallStats.sum.large} 个 (${largeMediumSmallStats.sum.largePercent}%)</li>
+              <li><strong>尾数大中小:</strong> 小 ${largeMediumSmallStats.lastDigit.small} 个 (${largeMediumSmallStats.lastDigit.smallPercent}%), 中 ${largeMediumSmallStats.lastDigit.medium} 个 (${largeMediumSmallStats.lastDigit.mediumPercent}%), 大 ${largeMediumSmallStats.lastDigit.large} 个 (${largeMediumSmallStats.lastDigit.largePercent}%)</li>
+              <li><strong>分析过程:</strong> 根据预设的阈值将合值和尾数分为大、中、小三个类别，并统计各类别的数量和占比。</li>
+              <li><strong>分析总结:</strong> ${largeMediumSmallStats.summary}</li>
+            </ul>
+          </div>
+          
+          <div class="analysis-section">
+            <h4>5. 质合分析</h4>
+            <ul>
+              <li><strong>分析原因:</strong> 质数和合数的分布也是彩票号码的重要特征，研究其规律有助于提高预测的准确性。</li>
+              <li><strong>尾数质合:</strong> 质 ${primeCompositeStats.lastDigit.prime} 个 (${primeCompositeStats.lastDigit.primePercent}%), 合 ${primeCompositeStats.lastDigit.composite} 个 (${primeCompositeStats.lastDigit.compositePercent}%)</li>
+              <li><strong>头数质合:</strong> 质 ${primeCompositeStats.firstDigit.prime} 个 (${primeCompositeStats.firstDigit.primePercent}%), 合 ${primeCompositeStats.firstDigit.composite} 个 (${primeCompositeStats.firstDigit.compositePercent}%)</li>
+              <li><strong>分析过程:</strong> 判断每个奖号的尾数和头数是否为质数，并统计质数和合数的数量和占比。</li>
+              <li><strong>分析总结:</strong> ${primeCompositeStats.summary}</li>
+            </ul>
+          </div>
+          
+          <div class="analysis-section">
+            <h4>6. 012路分析</h4>
+            <ul>
+              <li><strong>分析原因:</strong> 012路分析基于号码对3取余的结果，是一种常见的彩票分析方法，可以发现号码的周期性规律。</li>
+              <li><strong>头数012路:</strong> 0路 ${road012Stats.firstDigit.road0} 个 (${road012Stats.firstDigit.road0Percent}%), 1路 ${road012Stats.firstDigit.road1} 个 (${road012Stats.firstDigit.road1Percent}%), 2路 ${road012Stats.firstDigit.road2} 个 (${road012Stats.firstDigit.road2Percent}%)</li>
+              <li><strong>尾数012路:</strong> 0路 ${road012Stats.lastDigit.road0} 个 (${road012Stats.lastDigit.road0Percent}%), 1路 ${road012Stats.lastDigit.road1} 个 (${road012Stats.lastDigit.road1Percent}%), 2路 ${road012Stats.lastDigit.road2} 个 (${road012Stats.lastDigit.road2Percent}%)</li>
+              <li><strong>分析过程:</strong> 计算每个奖号的头数和尾数对3取余的结果，并统计各类别的数量和占比。</li>
+              <li><strong>分析总结:</strong> ${road012Stats.summary}</li>
+            </ul>
+          </div>
+          
+          <div class="analysis-section">
+            <h4>7. 象限与奖号段分析</h4>
+            <ul>
+              <li><strong>分析原因:</strong> 象限和奖号段分析从空间分布角度研究号码的特征，有助于发现号码的聚类规律。</li>
+              <li><strong>象限分布:</strong> 第1象限 ${quadrantAndRangeStats.quadrant.quadrant1} 个 (${quadrantAndRangeStats.quadrant.quadrant1Percent}%), 第2象限 ${quadrantAndRangeStats.quadrant.quadrant2} 个 (${quadrantAndRangeStats.quadrant.quadrant2Percent}%), 第3象限 ${quadrantAndRangeStats.quadrant.quadrant3} 个 (${quadrantAndRangeStats.quadrant.quadrant3Percent}%), 第4象限 ${quadrantAndRangeStats.quadrant.quadrant4} 个 (${quadrantAndRangeStats.quadrant.quadrant4Percent}%)</li>
+              <li><strong>奖号段分布:</strong> 第1段 ${quadrantAndRangeStats.numberRange.range1} 个 (${quadrantAndRangeStats.numberRange.range1Percent}%), 第2段 ${quadrantAndRangeStats.numberRange.range2} 个 (${quadrantAndRangeStats.numberRange.range2Percent}%), 第3段 ${quadrantAndRangeStats.numberRange.range3} 个 (${quadrantAndRangeStats.numberRange.range3Percent}%)</li>
+              <li><strong>分析过程:</strong> 根据预设的象限和奖号段划分，统计每个奖号所属的类别及其数量和占比。</li>
+              <li><strong>分析总结:</strong> ${quadrantAndRangeStats.summary}</li>
+            </ul>
+          </div>
+          
+          <div class="analysis-section">
+            <h4>8. 其他分析</h4>
+            <ul>
+              <li><strong>分析原因:</strong> 红蓝绿、家野和杀头尾分析是彩票分析中的特殊方法，可以提供额外的预测参考。</li>
+              <li><strong>颜色分布:</strong> 红 ${otherStats.color.red} 个 (${otherStats.color.redPercent}%), 蓝 ${otherStats.color.blue} 个 (${otherStats.color.bluePercent}%), 绿 ${otherStats.color.green} 个 (${otherStats.color.greenPercent}%)</li>
+              <li><strong>家野分布:</strong> 家 ${otherStats.homeWild.home} 个 (${otherStats.homeWild.homePercent}%), 野 ${otherStats.homeWild.wild} 个 (${otherStats.homeWild.wildPercent}%)</li>
+              <li><strong>杀头尾分布:</strong> 杀头 ${otherStats.killHeadTail.killHead} 个 (${otherStats.killHeadTail.killHeadPercent}%), 杀尾 ${otherStats.killHeadTail.killTail} 个 (${otherStats.killHeadTail.killTailPercent}%)</li>
+              <li><strong>分析过程:</strong> 根据预设的规则，统计每个奖号的颜色、家野和杀头尾属性及其数量和占比。</li>
+              <li><strong>分析总结:</strong> ${otherStats.summary}</li>
+            </ul>
+          </div>
+          
+          <div class="analysis-section highlight">
+            <h4>9. 预测结果分析</h4>
+            <ul>
+              <li>预测号码分析结果：${predictionAnalysis}</li>
+              <li><strong>预测依据:</strong> 基于伪随机数生成算法，结合号码频率、单双分布、大小分布、近期趋势等多个维度的分析结果。</li>
+              <li><strong>单双预测建议:</strong> ${singleDoubleStats.predictionSuggestion}</li>
+              <li><strong>大小预测建议:</strong> ${sizeStats.predictionSuggestion}</li>
+              <li><strong>趋势预测建议:</strong> 考虑到近期${recentTrend.trendChange}，建议${recentTrend.predictionSuggestion}</li>
+              <li><strong>优化建议:</strong> 结合大中小分析、质合分析、012路分析等多个维度的结果，可以进一步提高预测的准确性。</li>
+              <li><strong>预测原理:</strong> 使用伪随机数生成算法，在保持随机性的同时，通过调整概率分布使其更符合历史数据的统计特征。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+      
+      <div class="analysis-details">
+        <h4>🔥 热门号码（出现次数最多的前10个）</h4>
+        <div class="number-grid">
+          ${sortedByFrequency.map(([num, count]) => 
+            `<span class="number-item" title="出现${count}次，概率${probability[num]}%">${num}</span>`
+          ).join('')}
+        </div>
+        
+        <h4>❄️ 冷门号码（出现次数最少的前10个）</h4>
+        <div class="number-grid">
+          ${sortedByFrequencyAsc.map(([num, count]) => 
+            `<span class="number-item cold" title="出现${count}次，概率${probability[num]}%">${num}</span>`
+          ).join('')}
+        </div>
+        
+        <div class="analysis-section">
+          <h4>📊 预测策略说明</h4>
+          <p><strong>核心策略:</strong> 采用"伪随机数生成 + 统计特征拟合"的组合策略，在保持随机性的同时，使预测结果更符合历史数据的统计规律。</p>
+          <p><strong>风险提示:</strong> 彩票号码本质上是随机事件，任何预测都只是基于概率的推测，不应作为绝对依据。</p>
+          <p><strong>优化建议:</strong> 可结合自身风险偏好，调整热门/冷门号码的比例，或者参考更多期历史数据进行分析。</p>
+        </div>
+      </div>
+    `;
+    
+    document.getElementById('analysis-results').innerHTML = analysisHtml;
+    
+    // 准备预测结果对象，包含所有五种预测方法的结果和最大概率奖号
+    const predictionResult = {
+      allPredictions: allPredictions,
+      maxProbabilityNumber: maxProbabilityNumber,
+      maxProbability: maxProbability,
+      // 保留原有的numbers和probabilities结构以保持兼容性
+      numbers: allPredictions.map(pred => pred.number),
+      probabilities: allPredictions.map(pred => pred.probability)
+    };
+    
+    // 绘制频率趋势图
+    drawFrequencyChart(Object.entries(frequency).map(([num, count]) => [parseInt(num), count]), predictionResult);
+  }
+  
+  // 分析单双数据
+  function analyzeSingleDouble(data) {
+    const numberStats = { single: 0, double: 0 };
+    const sumStats = { single: 0, double: 0 };
+    const lastDigitStats = { single: 0, double: 0 };
+    const firstDigitStats = { single: 0, double: 0 };
+    
+    data.forEach(num => {
+      // 奖号单双
+      if (num % 2 === 0) numberStats.double++;
+      else numberStats.single++;
+      
+      // 合值单双
+      const sum = num.toString().split('').reduce((acc, digit) => acc + parseInt(digit), 0);
+      if (sum % 2 === 0) sumStats.double++;
+      else sumStats.single++;
+      
+      // 尾数单双
+      const lastDigit = num % 10;
+      if (lastDigit % 2 === 0) lastDigitStats.double++;
+      else lastDigitStats.single++;
+      
+      // 头数单双
+      const firstDigit = Math.floor(num / 10);
+      if (firstDigit % 2 === 0) firstDigitStats.double++;
+      else firstDigitStats.single++;
+    });
+    
+    const total = data.length;
+    const result = {
+      number: {
+        single: numberStats.single,
+        double: numberStats.double,
+        singlePercent: ((numberStats.single / total) * 100).toFixed(1),
+        doublePercent: ((numberStats.double / total) * 100).toFixed(1)
+      },
+      sum: {
+        single: sumStats.single,
+        double: sumStats.double,
+        singlePercent: ((sumStats.single / total) * 100).toFixed(1),
+        doublePercent: ((sumStats.double / total) * 100).toFixed(1)
+      },
+      lastDigit: {
+        single: lastDigitStats.single,
+        double: lastDigitStats.double,
+        singlePercent: ((lastDigitStats.single / total) * 100).toFixed(1),
+        doublePercent: ((lastDigitStats.double / total) * 100).toFixed(1)
+      },
+      firstDigit: {
+        single: firstDigitStats.single,
+        double: firstDigitStats.double,
+        singlePercent: ((firstDigitStats.single / total) * 100).toFixed(1),
+        doublePercent: ((firstDigitStats.double / total) * 100).toFixed(1)
+      }
+    };
+    
+    // 生成分析总结
+    let summary = '';
+    const singlePercentTotal = (result.number.single + result.sum.single + result.lastDigit.single + result.firstDigit.single) / 4;
+    const doublePercentTotal = (result.number.double + result.sum.double + result.lastDigit.double + result.firstDigit.double) / 4;
+    
+    if (Math.abs(singlePercentTotal - doublePercentTotal) < 10) {
+      summary = '单双分布较为均匀，没有明显的倾向性。';
+    } else if (singlePercentTotal > doublePercentTotal) {
+      summary = '单数出现频率高于双数，整体呈现出单数优势。';
+    } else {
+      summary = '双数出现频率高于单数，整体呈现出双数优势。';
+    }
+    
+    // 生成预测建议
+    let predictionSuggestion = '';
+    if (result.number.single > result.number.double) {
+      predictionSuggestion = '从历史数据看，单数出现频率较高，建议关注单数号码。';
+    } else {
+      predictionSuggestion = '从历史数据看，双数出现频率较高，建议关注双数号码。';
+    }
+    
+    result.summary = summary;
+    result.predictionSuggestion = predictionSuggestion;
+    
+    return result;
+  }
+  
+  // 分析大小数据
+  function analyzeSize(data) {
+    const numberStats = { small: 0, large: 0 };
+    const sumStats = { small: 0, large: 0 };
+    const lastDigitStats = { small: 0, large: 0 };
+    
+    data.forEach(num => {
+      // 奖号大小（1-24为小，25-49为大）
+      if (num <= 24) numberStats.small++;
+      else numberStats.large++;
+      
+      // 合值大小（合值<=12为小，>12为大）
+      const sum = num.toString().split('').reduce((acc, digit) => acc + parseInt(digit), 0);
+      if (sum <= 12) sumStats.small++;
+      else sumStats.large++;
+      
+      // 尾数大小（0-4为小，5-9为大）
+      const lastDigit = num % 10;
+      if (lastDigit <= 4) lastDigitStats.small++;
+      else lastDigitStats.large++;
+    });
+    
+    const total = data.length;
+    const result = {
+      number: {
+        small: numberStats.small,
+        large: numberStats.large,
+        smallPercent: ((numberStats.small / total) * 100).toFixed(1),
+        largePercent: ((numberStats.large / total) * 100).toFixed(1)
+      },
+      sum: {
+        small: sumStats.small,
+        large: sumStats.large,
+        smallPercent: ((sumStats.small / total) * 100).toFixed(1),
+        largePercent: ((sumStats.large / total) * 100).toFixed(1)
+      },
+      lastDigit: {
+        small: lastDigitStats.small,
+        large: lastDigitStats.large,
+        smallPercent: ((lastDigitStats.small / total) * 100).toFixed(1),
+        largePercent: ((lastDigitStats.large / total) * 100).toFixed(1)
+      }
+    };
+    
+    // 生成分析总结
+    let summary = '';
+    const smallPercentTotal = (result.number.small + result.sum.small + result.lastDigit.small) / 3;
+    const largePercentTotal = (result.number.large + result.sum.large + result.lastDigit.large) / 3;
+    
+    if (Math.abs(smallPercentTotal - largePercentTotal) < 10) {
+      summary = '大小分布较为均匀，没有明显的倾向性。';
+    } else if (smallPercentTotal > largePercentTotal) {
+      summary = '小数出现频率高于大数，整体呈现出小数优势。';
+    } else {
+      summary = '大数出现频率高于小数，整体呈现出大数优势。';
+    }
+    
+    // 生成预测建议
+    let predictionSuggestion = '';
+    if (result.number.small > result.number.large) {
+      predictionSuggestion = '从历史数据看，小数出现频率较高，建议关注小数号码（1-24）。';
+    } else {
+      predictionSuggestion = '从历史数据看，大数出现频率较高，建议关注大数号码（25-49）。';
+    }
+    
+    result.summary = summary;
+    result.predictionSuggestion = predictionSuggestion;
+    
+    return result;
+  }
+  
+  // 分析大中小数据
+  function analyzeLargeMediumSmall(data) {
+    const sumStats = { small: 0, medium: 0, large: 0 };
+    const lastDigitStats = { small: 0, medium: 0, large: 0 };
+    
+    data.forEach(num => {
+      // 合值大中小（合值<=8为小，9-16为中，>16为大）
+      const sum = num.toString().split('').reduce((acc, digit) => acc + parseInt(digit), 0);
+      if (sum <= 8) sumStats.small++;
+      else if (sum <= 16) sumStats.medium++;
+      else sumStats.large++;
+      
+      // 尾数大中小（0-3为小，4-6为中，7-9为大）
+      const lastDigit = num % 10;
+      if (lastDigit <= 3) lastDigitStats.small++;
+      else if (lastDigit <= 6) lastDigitStats.medium++;
+      else lastDigitStats.large++;
+    });
+    
+    const total = data.length;
+    const result = {
+      sum: {
+        small: sumStats.small,
+        medium: sumStats.medium,
+        large: sumStats.large,
+        smallPercent: ((sumStats.small / total) * 100).toFixed(1),
+        mediumPercent: ((sumStats.medium / total) * 100).toFixed(1),
+        largePercent: ((sumStats.large / total) * 100).toFixed(1)
+      },
+      lastDigit: {
+        small: lastDigitStats.small,
+        medium: lastDigitStats.medium,
+        large: lastDigitStats.large,
+        smallPercent: ((lastDigitStats.small / total) * 100).toFixed(1),
+        mediumPercent: ((lastDigitStats.medium / total) * 100).toFixed(1),
+        largePercent: ((lastDigitStats.large / total) * 100).toFixed(1)
+      }
+    };
+    
+    // 生成分析总结
+    const maxSumCategory = Object.keys(result.sum).filter(key => key !== 'smallPercent' && key !== 'mediumPercent' && key !== 'largePercent').reduce((a, b) => result.sum[a] > result.sum[b] ? a : b);
+    const maxLastDigitCategory = Object.keys(result.lastDigit).filter(key => key !== 'smallPercent' && key !== 'mediumPercent' && key !== 'largePercent').reduce((a, b) => result.lastDigit[a] > result.lastDigit[b] ? a : b);
+    
+    const categoryNames = { small: '小', medium: '中', large: '大' };
+    
+    summary = `合值以${categoryNames[maxSumCategory]}为主，尾数以${categoryNames[maxLastDigitCategory]}为主，显示出一定的集中趋势。`;
+    
+    result.summary = summary;
+    
+    return result;
+  }
+  
+  // 分析质合数据
+  function analyzePrimeComposite(data) {
+    // 定义质数（1-9之间的质数）
+    const primes = [2, 3, 5, 7];
+    
+    const lastDigitStats = { prime: 0, composite: 0 };
+    const firstDigitStats = { prime: 0, composite: 0 };
+    
+    data.forEach(num => {
+      // 尾数质合
+      const lastDigit = num % 10;
+      if (primes.includes(lastDigit)) lastDigitStats.prime++;
+      else lastDigitStats.composite++;
+      
+      // 头数质合
+      const firstDigit = Math.floor(num / 10);
+      if (primes.includes(firstDigit) && firstDigit !== 0) firstDigitStats.prime++;
+      else firstDigitStats.composite++;
+    });
+    
+    const total = data.length;
+    const result = {
+      lastDigit: {
+        prime: lastDigitStats.prime,
+        composite: lastDigitStats.composite,
+        primePercent: ((lastDigitStats.prime / total) * 100).toFixed(1),
+        compositePercent: ((lastDigitStats.composite / total) * 100).toFixed(1)
+      },
+      firstDigit: {
+        prime: firstDigitStats.prime,
+        composite: firstDigitStats.composite,
+        primePercent: ((firstDigitStats.prime / total) * 100).toFixed(1),
+        compositePercent: ((firstDigitStats.composite / total) * 100).toFixed(1)
+      }
+    };
+    
+    // 生成分析总结
+    let summary = '';
+    const primePercentTotal = (result.lastDigit.primePercent * 1 + result.firstDigit.primePercent * 1) / 2;
+    const compositePercentTotal = (result.lastDigit.compositePercent * 1 + result.firstDigit.compositePercent * 1) / 2;
+    
+    if (Math.abs(primePercentTotal - compositePercentTotal) < 10) {
+      summary = '质合分布较为均匀，没有明显的倾向性。';
+    } else if (primePercentTotal > compositePercentTotal) {
+      summary = '质数出现频率高于合数，整体呈现出质数优势。';
+    } else {
+      summary = '合数出现频率高于质数，整体呈现出合数优势。';
+    }
+    
+    result.summary = summary;
+    
+    return result;
+  }
+  
+  // 分析012路数据
+  function analyze012Road(data) {
+    const firstDigitStats = { road0: 0, road1: 0, road2: 0 };
+    const lastDigitStats = { road0: 0, road1: 0, road2: 0 };
+    
+    data.forEach(num => {
+      // 头数012路（对3取余）
+      const firstDigit = Math.floor(num / 10);
+      const firstDigitRoad = firstDigit % 3;
+      if (firstDigitRoad === 0) firstDigitStats.road0++;
+      else if (firstDigitRoad === 1) firstDigitStats.road1++;
+      else firstDigitStats.road2++;
+      
+      // 尾数012路（对3取余）
+      const lastDigit = num % 10;
+      const lastDigitRoad = lastDigit % 3;
+      if (lastDigitRoad === 0) lastDigitStats.road0++;
+      else if (lastDigitRoad === 1) lastDigitStats.road1++;
+      else lastDigitStats.road2++;
+    });
+    
+    const total = data.length;
+    const result = {
+      firstDigit: {
+        road0: firstDigitStats.road0,
+        road1: firstDigitStats.road1,
+        road2: firstDigitStats.road2,
+        road0Percent: ((firstDigitStats.road0 / total) * 100).toFixed(1),
+        road1Percent: ((firstDigitStats.road1 / total) * 100).toFixed(1),
+        road2Percent: ((firstDigitStats.road2 / total) * 100).toFixed(1)
+      },
+      lastDigit: {
+        road0: lastDigitStats.road0,
+        road1: lastDigitStats.road1,
+        road2: lastDigitStats.road2,
+        road0Percent: ((lastDigitStats.road0 / total) * 100).toFixed(1),
+        road1Percent: ((lastDigitStats.road1 / total) * 100).toFixed(1),
+        road2Percent: ((lastDigitStats.road2 / total) * 100).toFixed(1)
+      }
+    };
+    
+    // 生成分析总结
+    const maxFirstDigitRoad = Object.keys(result.firstDigit).filter(key => key !== 'road0Percent' && key !== 'road1Percent' && key !== 'road2Percent').reduce((a, b) => result.firstDigit[a] > result.firstDigit[b] ? a : b);
+    const maxLastDigitRoad = Object.keys(result.lastDigit).filter(key => key !== 'road0Percent' && key !== 'road1Percent' && key !== 'road2Percent').reduce((a, b) => result.lastDigit[a] > result.lastDigit[b] ? a : b);
+    
+    const roadNames = { road0: '0路', road1: '1路', road2: '2路' };
+    
+    summary = `头数以${roadNames[maxFirstDigitRoad]}为主，尾数以${roadNames[maxLastDigitRoad]}为主，显示出一定的周期性特征。`;
+    
+    result.summary = summary;
+    
+    return result;
+  }
+  
+  // 分析象限与奖号段数据
+  function analyzeQuadrantAndNumberRange(data) {
+    const quadrantStats = { quadrant1: 0, quadrant2: 0, quadrant3: 0, quadrant4: 0 };
+    const numberRangeStats = { range1: 0, range2: 0, range3: 0 };
+    
+    data.forEach(num => {
+      // 象限统计（使用rules对象中的象限定义）
+      if (rules.quadrant1.includes(num)) quadrantStats.quadrant1++;
+      else if (rules.quadrant2.includes(num)) quadrantStats.quadrant2++;
+      else if (rules.quadrant3.includes(num)) quadrantStats.quadrant3++;
+      else if (rules.quadrant4.includes(num)) quadrantStats.quadrant4++;
+      
+      // 奖号段统计（1-16为第1段，17-33为第2段，34-49为第3段）
+      if (num <= 16) numberRangeStats.range1++;
+      else if (num <= 33) numberRangeStats.range2++;
+      else numberRangeStats.range3++;
+    });
+    
+    const total = data.length;
+    const result = {
+      quadrant: {
+        quadrant1: quadrantStats.quadrant1,
+        quadrant2: quadrantStats.quadrant2,
+        quadrant3: quadrantStats.quadrant3,
+        quadrant4: quadrantStats.quadrant4,
+        quadrant1Percent: ((quadrantStats.quadrant1 / total) * 100).toFixed(1),
+        quadrant2Percent: ((quadrantStats.quadrant2 / total) * 100).toFixed(1),
+        quadrant3Percent: ((quadrantStats.quadrant3 / total) * 100).toFixed(1),
+        quadrant4Percent: ((quadrantStats.quadrant4 / total) * 100).toFixed(1)
+      },
+      numberRange: {
+        range1: numberRangeStats.range1,
+        range2: numberRangeStats.range2,
+        range3: numberRangeStats.range3,
+        range1Percent: ((numberRangeStats.range1 / total) * 100).toFixed(1),
+        range2Percent: ((numberRangeStats.range2 / total) * 100).toFixed(1),
+        range3Percent: ((numberRangeStats.range3 / total) * 100).toFixed(1)
+      }
+    };
+    
+    // 生成分析总结
+    const maxQuadrant = Object.keys(result.quadrant).filter(key => !key.includes('Percent')).reduce((a, b) => result.quadrant[a] > result.quadrant[b] ? a : b);
+    const maxNumberRange = Object.keys(result.numberRange).filter(key => !key.includes('Percent')).reduce((a, b) => result.numberRange[a] > result.numberRange[b] ? a : b);
+    
+    const quadrantNames = { quadrant1: '第1象限', quadrant2: '第2象限', quadrant3: '第3象限', quadrant4: '第4象限' };
+    const rangeNames = { range1: '第1段（1-16）', range2: '第2段（17-33）', range3: '第3段（34-49）' };
+    
+    summary = `号码在${quadrantNames[maxQuadrant]}和${rangeNames[maxNumberRange]}分布较多，显示出一定的空间聚集特征。`;
+    
+    result.summary = summary;
+    
+    return result;
+  }
+  
+  // 分析其他数据（红蓝绿、家野、杀头尾）
+  function analyzeOthers(data) {
+    const colorStats = { red: 0, blue: 0, green: 0 };
+    const homeWildStats = { home: 0, wild: 0 };
+    const killHeadTailStats = { killHead: 0, killTail: 0 };
+    
+    data.forEach(num => {
+      // 颜色统计（使用rules对象中的颜色定义）
+      if (rules.red.includes(num)) colorStats.red++;
+      else if (rules.blue.includes(num)) colorStats.blue++;
+      else if (rules.green.includes(num)) colorStats.green++;
+      
+      // 家野统计（使用rules对象中的家野定义）
+      if (rules.home.includes(num)) homeWildStats.home++;
+      else if (rules.wild.includes(num)) homeWildStats.wild++;
+      
+      // 杀头尾统计（杀头：头数为0；杀尾：尾数为0）
+      const firstDigit = Math.floor(num / 10);
+      const lastDigit = num % 10;
+      if (firstDigit === 0) killHeadTailStats.killHead++;
+      if (lastDigit === 0) killHeadTailStats.killTail++;
+    });
+    
+    const total = data.length;
+    const result = {
+      color: {
+        red: colorStats.red,
+        blue: colorStats.blue,
+        green: colorStats.green,
+        redPercent: ((colorStats.red / total) * 100).toFixed(1),
+        bluePercent: ((colorStats.blue / total) * 100).toFixed(1),
+        greenPercent: ((colorStats.green / total) * 100).toFixed(1)
+      },
+      homeWild: {
+        home: homeWildStats.home,
+        wild: homeWildStats.wild,
+        homePercent: ((homeWildStats.home / total) * 100).toFixed(1),
+        wildPercent: ((homeWildStats.wild / total) * 100).toFixed(1)
+      },
+      killHeadTail: {
+        killHead: killHeadTailStats.killHead,
+        killTail: killHeadTailStats.killTail,
+        killHeadPercent: ((killHeadTailStats.killHead / total) * 100).toFixed(1),
+        killTailPercent: ((killHeadTailStats.killTail / total) * 100).toFixed(1)
+      }
+    };
+    
+    // 生成分析总结
+    const maxColor = Object.keys(result.color).filter(key => !key.includes('Percent')).reduce((a, b) => result.color[a] > result.color[b] ? a : b);
+    const maxHomeWild = Object.keys(result.homeWild).filter(key => !key.includes('Percent')).reduce((a, b) => result.homeWild[a] > result.homeWild[b] ? a : b);
+    
+    const colorNames = { red: '红色', blue: '蓝色', green: '绿色' };
+    const homeWildNames = { home: '家数', wild: '野数' };
+    
+    summary = `${colorNames[maxColor]}和${homeWildNames[maxHomeWild]}出现频率较高，杀头尾号码占比分别为${result.killHeadTail.killHeadPercent}%和${result.killHeadTail.killTailPercent}%。`;
+    
+    result.summary = summary;
+    
+    return result;
+  }
+  
+  // 1. 频率预测方法
+  function frequencyPredictionMethod(data, frequency) {
+    // 找出出现频率最高的号码
+    let maxFreqNumber = null;
+    let maxFreq = 0;
+    
+    Object.entries(frequency).forEach(([num, count]) => {
+      if (count > maxFreq) {
+        maxFreq = count;
+        maxFreqNumber = parseInt(num);
+      }
+    });
+    
+    // 计算概率
+    const probability = (maxFreq / data.length * 100).toFixed(2);
+    
+    return { number: maxFreqNumber, probability: probability };
+  }
+  
+  // 2. 热号与冷号预测方法
+  function hotColdPredictionMethod(data, sortedByFrequency, sortedByFrequencyAsc) {
+    // 热号列表（出现频率最高的前10个）
+    const hotNumbers = sortedByFrequency.slice(0, 10).map(([num]) => parseInt(num));
+    // 冷号列表（出现频率最低的前10个）
+    const coldNumbers = sortedByFrequencyAsc.slice(0, 10).map(([num]) => parseInt(num));
+    
+    // 检查近期是否有冷号回补的趋势
+    const recentData = data.slice(-10);
+    let hasColdComeBack = false;
+    recentData.forEach(num => {
+      if (coldNumbers.includes(num)) {
+        hasColdComeBack = true;
+      }
+    });
+    
+    let predictedNumber;
+    let probability;
+    
+    if (hasColdComeBack) {
+      // 如果有冷号回补趋势，选择一个冷号
+      const randomIndex = Math.floor(Math.random() * coldNumbers.length);
+      predictedNumber = coldNumbers[randomIndex];
+      // 从sortedByFrequency中查找该号码的频率
+      const freqData = sortedByFrequency.find(item => parseInt(item[0]) === predictedNumber);
+      const numFrequency = freqData ? freqData[1] : 0;
+      probability = ((numFrequency / data.length * 100) + 5).toFixed(2); // 冷号回补额外加5%概率
+    } else {
+      // 否则选择一个热号
+      const randomIndex = Math.floor(Math.random() * hotNumbers.length);
+      predictedNumber = hotNumbers[randomIndex];
+      // 从sortedByFrequency中查找该号码的频率
+      const freqData = sortedByFrequency.find(item => parseInt(item[0]) === predictedNumber);
+      const numFrequency = freqData ? freqData[1] : 0;
+      probability = ((numFrequency / data.length * 100)).toFixed(2);
+    }
+    
+    return { number: predictedNumber, probability: probability };
+  }
+  
+  // 3. 号码间隔预测方法
+  function intervalPredictionMethod(data) {
+    if (data.length < 3) {
+      // 数据不足，返回随机号码
+      return { number: Math.floor(Math.random() * 49) + 1, probability: '10.00' };
+    }
+    
+    // 计算最近几期的间隔
+    const intervals = [];
+    for (let i = 1; i < data.length; i++) {
+      intervals.push(Math.abs(data[i] - data[i-1]));
+    }
+    
+    // 找出最常见的间隔
+    const intervalFreq = {};
+    intervals.forEach(interval => {
+      intervalFreq[interval] = (intervalFreq[interval] || 0) + 1;
+    });
+    
+    let maxFreqInterval = null;
+    let maxFreq = 0;
+    Object.entries(intervalFreq).forEach(([interval, freq]) => {
+      if (freq > maxFreq) {
+        maxFreq = freq;
+        maxFreqInterval = parseInt(interval);
+      }
+    });
+    
+    // 基于最近号码和最常见间隔进行预测
+    const lastNumber = data[data.length - 1];
+    let predictedNumber = lastNumber + maxFreqInterval;
+    
+    // 确保号码在1-49范围内
+    if (predictedNumber > 49) {
+      predictedNumber = predictedNumber - 49;
+    } else if (predictedNumber < 1) {
+      predictedNumber = predictedNumber + 49;
+    }
+    
+    // 计算概率（基于间隔的出现频率）
+    const probability = ((maxFreq / intervals.length) * 40 + 10).toFixed(2); // 间隔频率权重40%，基础概率10%
+    
+    return { number: predictedNumber, probability: probability };
+  }
+  
+  // 4. 伪随机数拟合方法
+  function pseudoRandomPredictionMethod(data, sortedByFrequency, recentTrend) {
+    // 使用当前时间作为伪随机数种子
+    const seed = Date.now();
+    
+    // 简单的伪随机数生成函数
+    function pseudoRandom(seed) {
+      const x = Math.sin(seed) * 10000;
+      return x - Math.floor(x);
+    }
+    
+    // 创建频率映射，用于计算概率
+    const frequencyMap = {};
+    sortedByFrequency.forEach(([num, count]) => {
+      frequencyMap[num] = count;
+    });
+    
+    const totalDraws = data.length;
+    
+    // 根据历史数据的统计特征调整随机概率
+    // 热门号码有更高的概率被选中
+    let hotNumbers = sortedByFrequency.slice(0, 10).map(([num]) => parseInt(num));
+    let mediumNumbers = sortedByFrequency.slice(10, 30).map(([num]) => parseInt(num));
+    let coldNumbers = sortedByFrequency.slice(30).map(([num]) => parseInt(num));
+    
+    // 确保数组不为空
+    if (hotNumbers.length === 0) {
+      hotNumbers = Array.from({length: 10}, (_, i) => i + 1); // 提供默认值
+    }
+    if (mediumNumbers.length === 0) {
+      mediumNumbers = Array.from({length: 20}, (_, i) => i + 11); // 提供默认值
+    }
+    if (coldNumbers.length === 0) {
+      coldNumbers = Array.from({length: 19}, (_, i) => i + 31); // 提供默认值
+    }
+    
+    let predictedNumber;
+    let attempts = 0;
+    const maxAttempts = 100;
+    
+    // 生成一个预测号码
+    do {
+      // 生成一个基础随机数
+      let randomNum = pseudoRandom(seed);
+      
+      // 根据权重选择号码类别
+      if (randomNum < 0.5 && hotNumbers.length > 0) {
+        // 50%的概率选择热门号码
+        const hotRandom = Math.floor(pseudoRandom(seed + 1) * hotNumbers.length);
+        predictedNumber = hotNumbers[hotRandom];
+      } else if (randomNum < 0.85 && mediumNumbers.length > 0) {
+        // 35%的概率选择中等热度号码
+        const mediumRandom = Math.floor(pseudoRandom(seed + 2) * mediumNumbers.length);
+        predictedNumber = mediumNumbers[mediumRandom];
+      } else if (coldNumbers.length > 0) {
+        // 15%的概率选择冷门号码（冷号回补）
+        const coldRandom = Math.floor(pseudoRandom(seed + 3) * coldNumbers.length);
+        predictedNumber = coldNumbers[coldRandom];
+      } else {
+        // 如果所有类别都为空，生成一个随机号码
+        predictedNumber = Math.floor(Math.random() * 49) + 1;
+      }
+      
+      // 确保号码在1-49范围内
+      predictedNumber = Math.max(1, Math.min(49, predictedNumber));
+      
+      // 确保号码有效
+      if (!isNaN(predictedNumber) && predictedNumber >= 1 && predictedNumber <= 49) {
+        // 尝试根据近期趋势进行微调
+        const recentTrendRandom = pseudoRandom(seed + 4);
+        if (recentTrendRandom < 0.3 && recentTrend) {
+          // 30%的概率根据近期趋势进行调整
+          if (recentTrend.recentParity && recentTrend.recentParity.odd > recentTrend.recentParity.even && predictedNumber % 2 === 0) {
+            // 如果近期奇数热，但预测的是偶数，则尝试调整
+            predictedNumber = (predictedNumber % 2 === 0) ? predictedNumber + 1 : predictedNumber;
+            if (predictedNumber > 49) predictedNumber = 1;
+          } else if (recentTrend.recentParity && recentTrend.recentParity.even > recentTrend.recentParity.odd && predictedNumber % 2 === 1) {
+            // 如果近期偶数热，但预测的是奇数，则尝试调整
+            predictedNumber = (predictedNumber % 2 === 1) ? predictedNumber + 1 : predictedNumber;
+            if (predictedNumber > 49) predictedNumber = 2;
+          }
+        }
+        // 如果生成了有效号码，跳出循环
+        break;
+      }
+      
+      attempts++;
+    } while (attempts < maxAttempts);
+    
+    // 作为最后的保障，如果预测号码仍无效，生成一个随机号码
+    if (!predictedNumber || isNaN(predictedNumber) || predictedNumber < 1 || predictedNumber > 49) {
+      predictedNumber = Math.floor(Math.random() * 49) + 1;
+    }
+    
+    // 计算该号码的概率
+    const count = frequencyMap[predictedNumber] || 0;
+    const probability = (count / totalDraws * 100).toFixed(2);
+    
+    return { number: predictedNumber, probability: probability };
+  }
+  
+  // 5. 外部信息规律预测方法
+  function externalPatternPredictionMethod(data, singleDoubleStats, sizeStats) {
+    // 这里综合了一些常见的彩票规律进行预测
+    
+    // 1. 单双平衡规律：如果近期单数多，倾向于预测偶数，反之亦然
+    const parityFactor = singleDoubleStats.number.single > singleDoubleStats.number.double ? 0.6 : 0.4;
+    
+    // 2. 大小平衡规律：如果近期小数多，倾向于预测大数，反之亦然
+    const sizeFactor = sizeStats.number.small > sizeStats.number.large ? 0.6 : 0.4;
+    
+    // 3. 冷热交替规律：最近出现的号码短期内再次出现的概率较低
+    const recentNumbers = data.slice(-5);
+    
+    // 生成符合上述规律的号码
+    let predictedNumber;
+    let attempts = 0;
+    const maxAttempts = 100;
+    
+    do {
+      // 基于单双和大小的概率分布生成随机数
+      let randomNum = Math.random();
+      let isEven, isLarge;
+      
+      if (randomNum < parityFactor) {
+        isEven = true;
+      } else {
+        isEven = false;
+      }
+      
+      randomNum = Math.random();
+      if (randomNum < sizeFactor) {
+        isLarge = true;
+      } else {
+        isLarge = false;
+      }
+      
+      // 生成符合条件的随机号码
+      do {
+        predictedNumber = Math.floor(Math.random() * 49) + 1;
+      } while (
+        (isEven && predictedNumber % 2 !== 0) || 
+        (!isEven && predictedNumber % 2 === 0) ||
+        (isLarge && predictedNumber <= 24) ||
+        (!isLarge && predictedNumber > 24)
+      );
+      
+      attempts++;
+    } while (recentNumbers.includes(predictedNumber) && attempts < maxAttempts);
+    
+    // 计算概率（综合各种规律的权重）
+    const probability = '15.00'; // 外部规律预测给予固定的15%概率
+    
+    return { number: predictedNumber, probability: probability };
+  }
+  
+  // 分析单个号码的属性
+  function analyzeNumber(number) {
+    // 单双分析
+    const isEven = number % 2 === 0;
+    const parity = isEven ? '双' : '单';
+    
+    // 大小分析
+    const size = number > 24 ? '大' : '小';
+    
+    // 合值分析
+    const sum = number.toString().split('').reduce((acc, digit) => acc + parseInt(digit), 0);
+    const sumParity = sum % 2 === 0 ? '双' : '单';
+    const sumSize = sum > 12 ? '大' : '小';
+    
+    // 尾数分析
+    const lastDigit = number % 10;
+    const lastDigitSize = lastDigit > 4 ? '大' : '小';
+    
+    // 头数分析
+    const firstDigit = Math.floor(number / 10);
+    const firstDigitParity = firstDigit % 2 === 0 ? '双' : '单';
+    
+    // 颜色分析
+    let color = '';
+    if (rules.red.includes(number)) color = '红';
+    else if (rules.blue.includes(number)) color = '蓝';
+    else if (rules.green.includes(number)) color = '绿';
+    
+    // 家野分析
+    const homeWild = rules.home.includes(number) ? '家' : '野';
+    
+    return `单双:${parity}, 大小:${size}, 合值(单双:${sumParity},大小:${sumSize}), 尾数(大小:${lastDigitSize}), 头数(单双:${firstDigitParity}), 颜色:${color}, 家野:${homeWild}`;
+  }
+  
+  // 分析近期趋势
+  function analyzeRecentTrend(recentData) {
+    const recentParity = { odd: 0, even: 0 };
+    const recentSize = { small: 0, large: 0 };
+    
+    recentData.forEach(num => {
+      // 奇偶统计
+      if (num % 2 === 0) recentParity.even++;
+      else recentParity.odd++;
+      
+      // 大小统计
+      if (num <= 24) recentSize.small++;
+      else recentSize.large++;
+    });
+    
+    // 判断趋势变化
+    let trendChange = '近期趋势保持稳定';
+    let recentParityAdjustment = '奇偶比例趋于平衡';
+    let recentSizeAdjustment = '大小比例趋于平衡';
+    let predictionSuggestion = '保持均衡选择';
+    
+    const parityDiff = Math.abs(recentParity.odd - recentParity.even);
+    const sizeDiff = Math.abs(recentSize.small - recentSize.large);
+    const totalRecentNumbers = recentData.length;
+    
+    // 如果差异超过一定比例，则认为有明显趋势
+    if (parityDiff / totalRecentNumbers > 0.3) {
+      recentParityAdjustment = recentParity.odd > recentParity.even ? '奇数出现频率明显上升' : '偶数出现频率明显上升';
+      predictionSuggestion = recentParity.odd > recentParity.even ? '适当增加奇数号码的选择' : '适当增加偶数号码的选择';
+    }
+    
+    if (sizeDiff / totalRecentNumbers > 0.3) {
+      recentSizeAdjustment = recentSize.small > recentSize.large ? '小数出现频率明显上升' : '大数出现频率明显上升';
+      predictionSuggestion = sizeDiff > parityDiff ? 
+        (recentSize.small > recentSize.large ? '适当增加小数号码的选择' : '适当增加大数号码的选择') : 
+        predictionSuggestion;
+    }
+    
+    if (recentParityAdjustment !== '奇偶比例趋于平衡' || recentSizeAdjustment !== '大小比例趋于平衡') {
+      trendChange = '近期出现明显的趋势变化';
+    }
+    
+    return {
+      recentParity,
+      recentSize,
+      trendChange,
+      recentParityAdjustment,
+      recentSizeAdjustment,
+      predictionSuggestion
+    };
+  }
+  
+  // 绘制频率趋势图
+  function drawFrequencyChart(frequencyData, predictionResult) {
+    // 检查是否已有图表，有则销毁
+    if (window.frequencyChart && typeof window.frequencyChart.destroy === 'function') {
+      window.frequencyChart.destroy();
+    }
+    
+    const ctx = document.getElementById('frequencyChart').getContext('2d');
+    
+    window.frequencyChart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: frequencyData.map(([num]) => num),
+        datasets: [{
+          label: '出现频率',
+          data: frequencyData.map(([, count]) => count),
+          borderColor: '#4CAF50',
+          backgroundColor: 'rgba(76, 175, 80, 0.1)',
+          borderWidth: 2,
+          tension: 0.1,
+          fill: true,
+          pointRadius: 3,
+          pointBackgroundColor: '#4CAF50'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          title: {
+            display: true,
+            text: '号码出现频率趋势图',
+            font: {
+              size: 16
+            }
+          },
+          tooltip: {
+            mode: 'index',
+            intersect: false,
+          }
+        },
+        scales: {
+          x: {
+            title: {
+              display: true,
+              text: '号码'
+            },
+            ticks: {
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 15
+            }
+          },
+          y: {
+            title: {
+              display: true,
+              text: '出现次数'
+            },
+            beginAtZero: true
+          }
+        }
+      }
+    });
+    
+    // 在图表下方创建下一期奖号预测模块
+    const chartContainer = document.querySelector('.chart-container');
+    let predictionContainer = document.getElementById('next-draw-prediction');
+    
+    // 如果预测模块已存在，则移除
+    if (predictionContainer) {
+      predictionContainer.remove();
+    }
+    
+    // 创建新的预测模块
+    predictionContainer = document.createElement('div');
+    predictionContainer.id = 'next-draw-prediction';
+    predictionContainer.className = 'next-draw-prediction';
+    
+    // 构建五种预测方法的HTML
+    let methodsHtml = '';
+    if (predictionResult.allPredictions && Array.isArray(predictionResult.allPredictions)) {
+      methodsHtml = `<div class="prediction-methods-container">
+        ${predictionResult.allPredictions.map((pred, index) => {
+          if (pred.number !== undefined && pred.number !== null && pred.probability !== undefined) {
+            return `<div class="prediction-method-item">
+              <div class="method-type">第${index + 1}种: ${pred.type}</div>
+              <div class="method-number">${pred.number}</div>
+              <div class="method-probability">${pred.probability}%</div>
+            </div>`;
+          } else {
+            return `<div class="prediction-method-item error">
+              <div class="method-type">第${index + 1}种: ${pred.type}</div>
+              <div class="method-number error">--</div>
+              <div class="method-probability error">生成失败</div>
+            </div>`;
+          }
+        }).join('')}
+      </div>`;
+    }
+    
+    // 构建最大概率奖号的HTML
+    let maxProbabilityHtml = '';
+    if (predictionResult.maxProbabilityNumber !== undefined && predictionResult.maxProbabilityNumber !== null) {
+      maxProbabilityHtml = `<div class="max-probability-container">
+        <h4>🔝 最大概率奖号</h4>
+        <div class="max-probability-number">${predictionResult.maxProbabilityNumber}</div>
+        <div class="max-probability-percentage">概率: ${predictionResult.maxProbability.toFixed(2)}%</div>
+      </div>`;
+    } else {
+      maxProbabilityHtml = `<div class="max-probability-container">
+        <h4>🔝 最大概率奖号</h4>
+        <div class="max-probability-number error">无法确定</div>
+      </div>`;
+    }
+    
+    predictionContainer.innerHTML = `
+      <h3>🔮 下一期奖号预测</h3>
+      <div class="prediction-content">
+        ${methodsHtml}
+        ${maxProbabilityHtml}
+        <p><strong>预测说明：</strong>综合运用五种不同预测方法，分别为频率预测、热号冷号预测、号码间隔预测、伪随机数拟合和外部信息规律预测，最后给出最大概率奖号。</p>
+      </div>
+    `;
+    
+    // 将预测模块添加到图表容器之后
+    chartContainer.parentNode.insertBefore(predictionContainer, chartContainer.nextSibling);
+    
+    // 创建并添加AI分析预测模块
+    createAIAnalysisModule(predictionContainer, predictionResult);
+  }
+  
+  // 创建AI分析预测模块
+  async function createAIAnalysisModule(predictionContainer, predictionResult) {
+    // 检查是否已有AI分析模块，有则移除
+    let aiAnalysisContainer = document.getElementById('ai-analysis-prediction');
+    if (aiAnalysisContainer) {
+      aiAnalysisContainer.remove();
+    }
+    
+    // 创建新的AI分析模块
+    aiAnalysisContainer = document.createElement('div');
+    aiAnalysisContainer.id = 'ai-analysis-prediction';
+    aiAnalysisContainer.className = 'ai-analysis-prediction';
+    
+    // 初始显示加载状态
+    aiAnalysisContainer.innerHTML = `
+      <h3>🤖 AI分析预测</h3>
+      <div class="ai-analysis-content">
+        <div class="loading-state">
+          <div class="loading-spinner"></div>
+          <p>正在分析数据，请稍候...</p>
+        </div>
+      </div>
+    `;
+    
+    // 将AI分析模块添加到奖号预测模块之后
+    predictionContainer.parentNode.insertBefore(aiAnalysisContainer, predictionContainer.nextSibling);
+    
+    try {
+      // 调用AI预测分析
+      const analysisResult = await getAIPredictionAnalysis(predictionResult);
+      
+      // 显示分析结果
+      const isUsingMock = !kimiApiConfig.apiKey || kimiApiConfig.apiKey.trim() === '';
+      aiAnalysisContainer.innerHTML = `
+        <h3>🤖 AI分析预测</h3>
+        <div class="ai-analysis-content">
+          <div class="analysis-text">${analysisResult}</div>
+          <p class="analysis-source">${isUsingMock ? '提示：当前使用模拟数据（未配置API密钥）' : 'AI分析基于Kimi大模型预测结果'}，仅供参考</p>
+        </div>
+      `;
+    } catch (error) {
+      // 显示错误状态
+      aiAnalysisContainer.innerHTML = `
+        <h3>🤖 AI分析预测</h3>
+        <div class="ai-analysis-content">
+          <div class="error-state">
+            <p>AI分析暂时无法获取，请稍后再试</p>
+          </div>
+        </div>
+      `;
+      console.error('AI分析预测出错:', error);
+    }
+  }
+  
+  // 阿里云百炼API配置
+  const kimiApiConfig = {
+    endpoint: 'https://api.moonshot.cn/v1/chat/completions',
+    apiKey: 'sk-50c1a77eefbf405da1d4bb036ee024d7', // 已填入阿里云百炼API密钥
+    model: 'kimi-k2-0905-preview'
+  };
+  
+  // 获取AI预测分析结果
+  async function getAIPredictionAnalysis(predictionResult) {
+    try {
+      // 获取所有奖号数据
+      const allData = await loadFromStorage();
+      const formattedData = JSON.stringify(allData);
+      
+      // 构建请求数据
+      const { maxProbabilityNumber, maxProbability } = predictionResult;
+      
+      // 检查是否配置了API密钥
+      if (!kimiApiConfig.apiKey || kimiApiConfig.apiKey.trim() === '') {
+        // 如果没有API密钥，使用模拟响应
+        console.warn('Kimi API密钥未配置，使用模拟响应');
+        const mockResponse = generateMockAIResponse({
+          maxProbabilityNumber,
+          maxProbability,
+          allPredictions: predictionResult.allPredictions || [],
+          requireSummary: true
+        });
+        showToast('ai模拟预测，仅供参考！');
+        return limitTextTo200Chars(mockResponse);
+      }
+      
+      // 构建发送给Kimi API的消息
+      const requestBody = {
+        model: kimiApiConfig.model,
+        messages: [
+          {
+            role: "system",
+            content: "你是Kimi，由Moonshot AI提供的AI助手。你精通中文和英文对话，旨在为用户提供安全、有帮助和准确的响应。你会拒绝回答任何与恐怖主义、种族主义或显式内容相关的问题。Moonshot AI是专有名词，不应翻译成其他语言。你现在的任务是分析彩票数据并预测下一期奖号。"
+          },
+          {
+            role: "user",
+            content: `这里是所有奖号数据：${formattedData}。根据分析，彩票号码${maxProbabilityNumber}的综合概率达到${maxProbability.toFixed(2)}%，是当前分析得出的最大概率奖号。请你基于所有奖号数据和分析结果，预测下一期可能出现的奖号，并给出分析依据，限制在200字以内。`
+          }
+        ],
+        temperature: 0.6
+      };
+      
+      // 调用Kimi API
+      const response = await fetch(kimiApiConfig.endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${kimiApiConfig.apiKey}`
+        },
+        body: JSON.stringify(requestBody)
+      });
+      
+      if (!response.ok) {
+        throw new Error(`Kimi API请求失败: ${response.status} ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      
+      // 提取AI响应
+      const aiResponse = data.choices[0]?.message?.content || '';
+      
+      // 限制结果在200字以内
+      const limitedResult = limitTextTo200Chars(aiResponse);
+      
+      // 显示成功提示
+      showToast('ai预测成功！');
+      
+      return limitedResult;
+    } catch (error) {
+      console.error('获取AI预测分析时出错:', error);
+      // 如果API调用失败，回退到模拟响应
+      const mockResponse = generateMockAIResponse({
+        maxProbabilityNumber: predictionResult.maxProbabilityNumber,
+        maxProbability: predictionResult.maxProbability,
+        allPredictions: predictionResult.allPredictions || [],
+        requireSummary: true
+      });
+      showToast('ai模拟预测，仅供参考！');
+      return limitTextTo200Chars(mockResponse);
+    }
+  }
+  
+  // 生成模拟的AI响应（用于示例）
+  function generateMockAIResponse(requestData) {
+    const { maxProbabilityNumber, maxProbability } = requestData;
+    
+    const responses = [
+      `根据历史数据分析和当前趋势，${maxProbabilityNumber}号的综合概率达${maxProbability.toFixed(2)}%，是下一期的热门选择。建议关注其周边号码，如${Math.max(1, maxProbabilityNumber - 1)}和${Math.min(49, maxProbabilityNumber + 1)}。`,
+      `通过大数据统计和模式识别，${maxProbabilityNumber}号呈现显著的热号特征，在过去多期中表现活跃。预测模型显示该号码有较高概率在近期再次出现，可适当关注。`,
+      `综合五种预测方法的结果，${maxProbabilityNumber}号脱颖而出，成为最大概率奖号。从趋势图来看，该号码处于上升周期，值得考虑。建议结合其他热号进行组合投注。`,
+      `经过AI模型分析，${maxProbabilityNumber}号的出现概率达到${maxProbability.toFixed(2)}%，是当前最值得关注的号码之一。模型同时检测到该号码与近期热门号码存在互补性，可作为投注重点。`
+    ];
+    
+    // 随机选择一个响应
+    const randomIndex = Math.floor(Math.random() * responses.length);
+    return responses[randomIndex];
+  }
+  
+  // 将文本限制在200字以内
+  function limitTextTo200Chars(text) {
+    if (text.length <= 200) {
+      return text;
+    }
+    // 截取前197个字符，然后添加省略号
+    return text.substring(0, 197) + '...';
+  }
+  
+  // 初始化函数
+  async function initApp() {
+    // 初始化表格
     await initTable();
-    // 页面加载完成后添加保存按钮
+    
+    // 添加保存按钮
     addSaveButton();
-  });
+    
+    // 检查Supabase连接状态
+    try {
+      // 尝试一个简单的查询来验证连接
+      const { data, error } = await supabase.from('lottery_data').select('id').limit(1);
+      
+      if (error) {
+        console.error('Supabase连接验证失败:', error);
+        updateConnectionStatus(false);
+      } else {
+        console.log('Supabase连接验证成功');
+        updateConnectionStatus(true);
+        
+        // 设置实时连接状态监听
+        setupRealtimeListener();
+      }
+    } catch (error) {
+      console.error('Supabase连接检查时出错:', error);
+      updateConnectionStatus(false);
+    }
+  }
+  
+  // 重写window load事件
+  window.addEventListener('load', initApp);
   window.addEventListener('resize', drawAllLines);
 </script>
+</div>
+
+<!-- 趋势分析与预测页面 -->
+<div id="trend-page" class="page-container">
+  <div class="trend-analysis-container">
+    <h2>📈 趋势分析与预测</h2>
+    
+    <div class="chart-container">
+      <canvas id="frequencyChart"></canvas>
+    </div>
+    
+    <div id="analysis-results" class="analysis-results">
+      <p>正在分析数据...</p>
+    </div>
+  </div>
+  
+  <style>
+    .trend-analysis-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+    
+    .trend-analysis-container h2 {
+      text-align: center;
+      margin-bottom: 30px;
+      color: #333;
+    }
+    
+    .chart-container {
+      height: 400px;
+      margin-bottom: 10px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      border-radius: 8px;
+      padding: 15px;
+      background: white;
+    }
+    
+    .next-draw-prediction {
+      background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+      margin-bottom: 30px;
+      box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+    }
+    
+    .next-draw-prediction h3 {
+      margin: 0 0 15px 0;
+    }
+    
+    .next-draw-prediction h4 {
+      color: white;
+      text-align: center;
+      margin-bottom: 10px;
+      margin-top: 0;
+    }
+    
+    /* 预测方法容器样式 */
+    .prediction-methods-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 15px;
+      justify-content: center;
+      margin-bottom: 25px;
+    }
+    
+    /* 预测方法项样式 */
+    .prediction-method-item {
+      background: rgba(255, 255, 255, 0.15);
+      border-radius: 8px;
+      padding: 15px;
+      text-align: center;
+      width: 140px;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      transition: all 0.3s ease;
+      backdrop-filter: blur(5px);
+    }
+    
+    .prediction-method-item:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+      background: rgba(255, 255, 255, 0.2);
+    }
+    
+    /* 方法类型文本样式 */
+    .method-type {
+      font-size: 12px;
+      color: #b3ffb3;
+      margin-bottom: 8px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    /* 预测号码样式 */
+    .method-number {
+      font-size: 28px;
+      font-weight: bold;
+      color: #fff;
+      margin-bottom: 5px;
+    }
+    
+    /* 预测概率样式 */
+    .method-probability {
+      font-size: 14px;
+      color: #4CFF4C;
+      font-weight: bold;
+    }
+    
+    /* 最大概率奖号容器样式 */
+    .max-probability-container {
+      background: rgba(255, 215, 0, 0.2);
+      border-radius: 10px;
+      padding: 20px;
+      text-align: center;
+      border: 2px solid rgba(255, 215, 0, 0.5);
+      margin-top: 20px;
+    }
+    
+    /* 最大概率奖号样式 */
+    .max-probability-number {
+      font-size: 48px;
+      font-weight: bold;
+      color: #FFD700;
+      margin: 10px 0;
+    }
+    
+    /* 最大概率百分比样式 */
+    .max-probability-percentage {
+      font-size: 18px;
+      color: #FFD700;
+      font-weight: bold;
+    }
+    
+    /* 错误状态样式 */
+    .error .method-number,
+    .error .method-probability,
+    .error .max-probability-number {
+      color: #ffcccc;
+    }
+    
+    .error {
+      background-color: rgba(255, 0, 0, 0.2) !important;
+    }
+    
+    /* 响应式设计 */
+    @media (max-width: 768px) {
+      .prediction-methods-container {
+        flex-direction: column;
+        align-items: center;
+      }
+      
+      .prediction-method-item {
+        width: 200px;
+      }
+      
+      .max-probability-number {
+        font-size: 36px;
+      }
+    }
+    
+    .prediction-content .predicted-number-highlight {
+      font-size: 32px;
+      font-weight: bold;
+      margin: 10px 0;
+      color: #fff;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+    }
+    
+    .predicted-numbers-grid {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 15px;
+      margin: 15px 0;
+    }
+    
+    .predicted-number-item {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.2);
+      padding: 15px 20px;
+      border-radius: 8px;
+      min-width: 80px;
+      backdrop-filter: blur(5px);
+    }
+    
+    .predicted-number {
+      font-size: 28px;
+      font-weight: bold;
+      color: #fff;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+      margin-bottom: 5px;
+    }
+    
+    .predicted-probability {
+      font-size: 14px;
+      color: #fff;
+      opacity: 0.9;
+      background: rgba(0,0,0,0.2);
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+    
+    .predicted-number-item.error {
+      background: rgba(255, 0, 0, 0.2);
+    }
+    
+    .predicted-number-item.error .predicted-number,
+    .predicted-number-item.error .predicted-probability {
+      color: #ffcccc;
+    }
+    
+    .prediction-content p {
+      margin: 10px 0 0 0;
+      font-size: 14px;
+      opacity: 0.9;
+    }
+    
+    .analysis-results {
+      background: white;
+      border-radius: 8px;
+      padding: 20px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    }
+    
+    .analysis-summary {
+      margin-bottom: 30px;
+      padding: 15px;
+      background-color: #f9f9f9;
+      border-radius: 6px;
+    }
+    
+    .prediction-header {
+      background-color: #4CAF50;
+      color: white;
+      padding: 15px;
+      border-radius: 8px;
+      text-align: center;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 10px rgba(76, 175, 80, 0.3);
+    }
+    
+    .prediction-header h3 {
+      margin: 0;
+      font-size: 24px;
+    }
+    
+    .analysis-summary h3 {
+      margin-top: 0;
+      color: #333;
+      text-align: center;
+      margin-bottom: 20px;
+    }
+    
+    .structured-analysis {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    
+    .analysis-section {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    
+    .analysis-section h4 {
+      margin-top: 0;
+      color: #2c3e50;
+      border-bottom: 2px solid #ecf0f1;
+      padding-bottom: 8px;
+      margin-bottom: 15px;
+    }
+    
+    .analysis-section ul {
+      margin: 0;
+      padding-left: 20px;
+    }
+    
+    .analysis-section li {
+      margin-bottom: 8px;
+      line-height: 1.6;
+      color: #34495e;
+    }
+    
+    .analysis-section.highlight {
+      background-color: #e8f5e9;
+      border-left: 4px solid #4caf50;
+    }
+    
+    .predicted-number {
+      font-size: 1.5em;
+      color: #4caf50;
+      font-weight: bold;
+    }
+    
+    .predicted-number {
+      font-size: 24px;
+      color: #4CAF50;
+    }
+    
+    .analysis-details h4 {
+      color: #555;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+    
+    .number-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    
+    .number-item {
+      display: inline-block;
+      padding: 8px 12px;
+      background-color: #4CAF50;
+      color: white;
+      border-radius: 4px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    
+    .number-item:hover {
+      transform: scale(1.1);
+    }
+    
+    .number-item.cold {
+      background-color: #2196F3;
+    }
+    
+    /* 移动端适配 */
+    @media (max-width: 768px) {
+      .trend-analysis-container {
+        padding: 10px;
+      }
+      
+      .chart-container {
+        height: 300px;
+        padding: 10px;
+      }
+      
+      .number-item {
+        padding: 6px 10px;
+        font-size: 14px;
+      }
+      
+      .predicted-number {
+        font-size: 20px;
+      }
+    }
+    
+    /* AI分析预测模块样式 */
+    .ai-analysis-prediction {
+      background: linear-gradient(135deg, #2196F3 0%, #1976D2 100%);
+      color: white;
+      padding: 20px;
+      border-radius: 8px;
+      text-align: center;
+      margin-bottom: 30px;
+      box-shadow: 0 4px 15px rgba(33, 150, 243, 0.4);
+    }
+    
+    .ai-analysis-prediction h3 {
+      margin: 0 0 15px 0;
+    }
+    
+    .ai-analysis-content {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 20px;
+      backdrop-filter: blur(5px);
+    }
+    
+    /* 加载状态样式 */
+    .loading-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 30px 0;
+    }
+    
+    .loading-spinner {
+      border: 4px solid rgba(255, 255, 255, 0.3);
+      border-top: 4px solid white;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin-bottom: 15px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    /* 分析结果文本样式 */
+    .analysis-text {
+      font-size: 16px;
+      line-height: 1.6;
+      margin-bottom: 15px;
+      text-align: left;
+    }
+    
+    /* 分析来源说明 */
+    .analysis-source {
+      font-size: 12px;
+      opacity: 0.8;
+      margin: 0;
+      text-align: right;
+    }
+    
+    /* 错误状态样式 */
+    .error-state {
+      padding: 30px 0;
+    }
+    
+    /* AI分析预测模块的响应式设计 */
+    @media (max-width: 768px) {
+      .ai-analysis-prediction {
+        padding: 15px;
+      }
+      
+      .ai-analysis-content {
+        padding: 15px;
+      }
+      
+      .analysis-text {
+        font-size: 14px;
+      }
+      
+      .loading-spinner {
+        width: 30px;
+        height: 30px;
+      }
+    }
+  </style>
+</div>
+
 </body>
 </html>
