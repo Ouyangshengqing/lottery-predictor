@@ -1689,6 +1689,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         const input = row.querySelector('input');
         processRow(input, false);
     }
+    // 添加新行后，自动滚动到表格底部
+    const tableWrapper = document.getElementById('tableWrapper');
+    if (tableWrapper) {
+      tableWrapper.scrollTop = tableWrapper.scrollHeight;
+    }
   }
 
   function getCellPosition(cell) {
