@@ -630,6 +630,113 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         padding: 6px;
       }
     }
+    
+    /* 针对iPhone 11/13的Safari浏览器的特定优化 - 主要调整表格长度 */
+    @media (max-width: 414px) {
+      /* 减小表格长度，确保在iPhone屏幕上完整显示 */
+      .table-wrapper {
+        max-height: calc(8 * 30px + 60px); /* 设置合适的高度 */
+        width: 100%;
+        margin: 0 auto;
+        overflow: auto; /* 允许滚动 */
+      }
+      
+      /* 优化表格样式 */
+      table {
+        width: 100%;
+        table-layout: fixed;
+      }
+      
+      th, td {
+        font-size: 9px;
+        height: 30px;
+        padding: 2px;
+      }
+      
+      /* 调整表头位置 */
+      thead tr:nth-child(1) th {
+        position: sticky;
+        top: 0;
+      }
+      
+      thead tr:nth-child(2) th {
+        position: sticky;
+        top: 30px;
+      }
+      
+      /* 优化按钮显示 */
+      .save-btn {
+        width: 95%;
+        max-width: none;
+        font-size: 14px;
+        padding: 12px 20px;
+        margin: 0 auto;
+      }
+      
+      .add-row-btn {
+        width: 95%;
+        max-width: none;
+        font-size: 12px;
+        padding: 8px 16px;
+        margin: 10px auto;
+      }
+      
+      /* 确保所有控制按钮可见 */
+      .controls-row {
+        margin-bottom: 10px;
+        flex-direction: column;
+        align-items: center;
+      }
+      
+      /* 减小输入框尺寸 */
+      input[type="number"] {
+        font-size: 11px;
+        padding: 2px;
+      }
+      
+      /* 优化下拉菜单显示 */
+      .dropdown-content {
+        position: relative;
+        width: 95%;
+        max-width: none;
+      }
+      
+      /* 确保按钮完全显示 */
+      .save-btn {
+        width: 95%;
+        max-width: none;
+        font-size: 13px;
+      }
+      
+      .add-row-btn {
+        width: 95%;
+        max-width: none;
+        font-size: 11px;
+      }
+      
+      /* 确保所有控制按钮可见 */
+      .controls-row {
+        margin-bottom: 10px;
+      }
+      
+      /* 优化输入框样式 */
+      input[type="number"] {
+        font-size: 9px;
+        padding: 0;
+      }
+      
+      /* 表头样式优化 */
+      thead tr:nth-child(1) th {
+        font-size: 7px;
+        padding: 1px;
+      }
+      
+      thead tr:nth-child(2) th {
+        font-size: 7px;
+        padding: 1px;
+        top: 24px;
+      }
+    }
   </style>
   <style>
     /* 菜单栏样式 */
