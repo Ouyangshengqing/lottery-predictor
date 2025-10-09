@@ -1674,25 +1674,102 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   function addRowToTable(rowIndex, value = null) {
     const tbody = document.getElementById('tableBody');
     const row = document.createElement('tr');
+    row.id = `row_${rowIndex}`;
     row.dataset.rowIndex = rowIndex;
     const issueNumber = START_ISSUE + rowIndex - 1;
-    let cells = `<td>${issueNumber}</td><td><input type="number" min="1" max="49" value="${value || ''}" onchange="processRow(this)"></td>`;
-    for (let j = 1; j <= 40; j++) {
-      cells += `<td><div class="circle" id="c_${rowIndex}_${j}"></div></td>`;
+    
+    // 创建行号单元格
+    const tdIndex = document.createElement('td');
+    tdIndex.className = 'row-index';
+    tdIndex.innerText = issueNumber;
+    row.appendChild(tdIndex);
+    
+    // 创建输入单元格
+    const tdInput = document.createElement('td');
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '1';
+    input.max = '49';
+    input.className = 'number-input';
+    input.value = value || '';
+    input.dataset.rowIndex = rowIndex;
+    
+    // 使用事件监听器而不是内联事件
+    input.addEventListener('change', function() {
+      updateRow(this, false);
+    });
+    
+    tdInput.appendChild(input);
+    row.appendChild(tdInput);
+    
+    // 创建其他42个单元格
+    for (let j = 1; j <= 42; j++) {
+      const td = document.createElement('td');
+      const circle = document.createElement('div');
+      circle.className = j <= 40 ? 'circle' : 'symbol';
+      circle.id = `c_${rowIndex}_${j}`;
+      circle.style.opacity = '0';
+      // 对、错两列设置特殊符号
+      if (j === 41) {
+        circle.innerText = '√';
+      } else if (j === 42) {
+        circle.innerText = '×';
+      }
+      td.appendChild(circle);
+      row.appendChild(td);
     }
-    // 对、错两列使用特殊样式，显示符号而不是圆点
-    cells += `<td><div class="symbol" id="c_${rowIndex}_41">√</div></td>`;
-    cells += `<td><div class="symbol" id="c_${rowIndex}_42">×</div></td>`;
-    row.innerHTML = cells;
+    
     tbody.appendChild(row);
+    
     if (value !== null && !isNaN(value) && value >= 1 && value <= 49) {
-        const input = row.querySelector('input');
-        processRow(input, false);
+      processRow(input, false);
     }
+    
     // 添加新行后，自动滚动到表格底部
     const tableWrapper = document.getElementById('tableWrapper');
     if (tableWrapper) {
-      tableWrapper.scrollTop = tableWrapper.scrollHeight;
+      // 使用requestAnimationFrame确保在DOM更新后执行滚动
+      requestAnimationFrame(() => {
+        tableWrapper.scrollTop = tableWrapper.scrollHeight;
+      });
+    }
+  }
+  
+  // 实现updateRow函数，处理输入框更新时的数据处理
+  function updateRow(inputElement, shouldRedraw = true) {
+    const value = parseInt(inputElement.value);
+    const isValid = !isNaN(value) && value >= 1 && value <= 49;
+    
+    // 清除行数据
+    clearRow(parseInt(inputElement.dataset.rowIndex));
+    
+    if (isValid) {
+      // 处理有效输入
+      processRow(inputElement, shouldRedraw);
+      
+      // 更新本地数据并设置更新标志
+      isLocalUpdate = true;
+      
+      // 保存到存储
+      saveDataToStorageSilent();
+    }
+    
+    return isValid;
+  }
+  
+  // 静默保存数据（不显示toast消息）
+  async function saveDataToStorageSilent() {
+    const data = [];
+    document.querySelectorAll('#tableBody tr').forEach(row => {
+      const input = row.querySelector('input');
+      data.push(input.value ? parseInt(input.value) : null);
+    });
+    const dataToSave = trimNulls(data);
+    try {
+      await saveToStorage(dataToSave);
+    } catch (error) {
+      console.error('静默保存数据失败:', error);
+      // 这里不显示错误消息，因为这是后台操作
     }
   }
 
@@ -1706,7 +1783,40 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     };
   }
   
-  function drawAllLines() {
+  // 节流函数，限制高频调用
+  function throttle(func, limit) {
+    let inThrottle;
+    return function() {
+      const args = arguments;
+      const context = this;
+      if (!inThrottle) {
+        func.apply(context, args);
+        inThrottle = true;
+        setTimeout(() => inThrottle = false, limit);
+      }
+    };
+  }
+
+  // 获取可视区域内的行
+  function getVisibleRows(tableWrapper, rows) {
+    const wrapperRect = tableWrapper.getBoundingClientRect();
+    const visibleRows = [];
+    
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowRect = row.getBoundingClientRect();
+      
+      // 如果行与容器有重叠，则认为是可视的
+      if (rowRect.bottom >= wrapperRect.top && rowRect.top <= wrapperRect.bottom) {
+        visibleRows.push(row);
+      }
+    }
+    
+    return visibleRows;
+  }
+
+  // 原始的drawAllLines函数
+  function drawAllLinesInternal() {
     const svg = document.getElementById('lineLayer');
     const table = document.getElementById('dataTable');
     const tableWrapper = document.getElementById('tableWrapper');
@@ -1716,9 +1826,21 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     svg.style.width = table.scrollWidth + 'px'; 
     svg.innerHTML = '';
 
+    // 创建DocumentFragment以批量插入DOM元素
+    const fragment = document.createDocumentFragment();
+
     const rows = document.querySelectorAll('#tableBody tr');
     if (rows.length > 1) {
-      for (let i = 0; i < rows.length - 1; i++) {
+      // 只处理可视区域内的行
+      const visibleRows = getVisibleRows(tableWrapper, rows);
+      
+      // 为了连线，我们需要前一行和后一行，所以扩展一点范围
+      const firstVisibleIndex = Array.from(rows).indexOf(visibleRows[0]);
+      const lastVisibleIndex = Array.from(rows).indexOf(visibleRows[visibleRows.length - 1]);
+      const startIndex = Math.max(0, firstVisibleIndex - 1);
+      const endIndex = Math.min(rows.length - 1, lastVisibleIndex + 1);
+      
+      for (let i = startIndex; i < endIndex; i++) {
         const currentRow = rows[i];
         const nextRow = rows[i + 1];
         GROUPS.forEach(group => {
@@ -1749,7 +1871,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
                 line.setAttribute('x1', p1.x); line.setAttribute('y1', p1.y);
                 line.setAttribute('x2', p2.x); line.setAttribute('y2', p2.y);
                 line.setAttribute('stroke', 'black'); line.setAttribute('stroke-width', '1');
-                svg.appendChild(line);
+                fragment.appendChild(line);
               });
             });
           }
@@ -1759,7 +1881,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     
     const tableHeaderRow = table.querySelector('thead tr:last-child');
     const firstDataRow = table.querySelector('tbody tr:first-child');
-    if (!tableHeaderRow || !firstDataRow) return;
+    if (!tableHeaderRow || !firstDataRow) {
+      // 将创建的所有线条一次性添加到DOM
+      svg.appendChild(fragment);
+      return;
+    }
 
     let boundaryIndices = [
         0, 
@@ -1803,10 +1929,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
             line.setAttribute('x2', x); line.setAttribute('y2', y2);
             line.setAttribute('stroke', '#333'); 
             line.setAttribute('stroke-width', (colIndex === 0 || colIndex === 2 || colIndex === 44) ? '2' : '1');
-            svg.appendChild(line);
+            fragment.appendChild(line);
         }
     }
+    
+    // 将创建的所有线条一次性添加到DOM
+    svg.appendChild(fragment);
   }
+  
+  // 使用节流优化的drawAllLines函数
+  const drawAllLines = throttle(drawAllLinesInternal, 50);
 
   async function initTable() {
     const tbody = document.getElementById('tableBody');
@@ -1903,7 +2035,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     return Math.floor(num / Math.pow(10, pos)) % 10;
   }
 
-  async function processRow(input, shouldRedraw = true) {
+  function processRow(input, shouldRedraw = true) {
     const row = input.closest('tr');
     const rowIndex = parseInt(row.dataset.rowIndex);
     clearRow(rowIndex);
@@ -1913,8 +2045,14 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       const tens = getDigit(num, 1);
       const sum = units + tens; 
       const sumTail = sum % 10;
+      // 预缓存当前行的所有元素，避免多次DOM查询
+      const elements = {};
+      for (let i = 1; i <= 42; i++) {
+        elements[i] = document.getElementById(`c_${rowIndex}_${i}`);
+      }
+      
       const setCircle = (id, visible) => {
-        const el = document.getElementById(`c_${rowIndex}_${id}`);
+        const el = elements[id];
         if (el) {
           el.style.opacity = visible ? '1' : '0';
           // 为符号添加额外样式
@@ -2355,17 +2493,39 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         if (!Array.isArray(data)) throw new Error('无效 JSON 格式');
         
         const trimmedData = trimNulls(data); 
-
-        document.getElementById('tableBody').innerHTML = '';
+        
+        // 创建DocumentFragment批量处理DOM操作
+        const fragment = document.createDocumentFragment();
+        
+        // 清空表格但保留事件监听器
+        const tableBody = document.getElementById('tableBody');
+        while (tableBody.firstChild) {
+          tableBody.removeChild(tableBody.firstChild);
+        }
+        
         currentRowCount = trimmedData.length;
-
+        
+        // 批量创建行元素，但不进行DOM插入
+        const rowElements = [];
         trimmedData.forEach((val, idx) => {
           const rowIndex = idx + 1;
-          addRowToTable(rowIndex, val); 
+          const row = createRowElement(rowIndex, val); // 使用新函数创建行元素但不立即添加到DOM
+          rowElements.push({ row, rowIndex, value: val });
+          fragment.appendChild(row);
         });
-
+        
+        // 一次性将所有行添加到DOM
+        tableBody.appendChild(fragment);
+        
+        // 批量处理行数据（如processRow）
+        for (const { row, rowIndex, value } of rowElements) {
+          if (value !== null) {
+            processRow(rowIndex, value, false); // 不立即重绘线条
+          }
+        }
+        
         await saveToStorage(trimmedData);
-        setTimeout(drawAllLines, 200);
+        setTimeout(drawAllLines, 200); // 一次性绘制所有线条
         showToast('✅ JSON 加载成功！');
       } catch (err) {
         showToast('❌ 加载失败：' + err.message, true);
@@ -2373,6 +2533,49 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     };
     reader.readAsText(file);
     event.target.value = '';
+  }
+  
+  // 创建行元素但不立即添加到DOM的函数
+  function createRowElement(rowIndex, value) {
+    const tr = document.createElement('tr');
+    tr.id = `row_${rowIndex}`;
+    tr.dataset.rowIndex = rowIndex;
+    
+    // 创建行号单元格
+    const tdIndex = document.createElement('td');
+    tdIndex.className = 'row-index';
+    tdIndex.innerText = rowIndex;
+    tr.appendChild(tdIndex);
+    
+    // 创建输入单元格
+    const tdInput = document.createElement('td');
+    const input = document.createElement('input');
+    input.type = 'number';
+    input.min = '0';
+    input.max = '99';
+    input.className = 'number-input';
+    input.value = value !== null ? value : '';
+    input.dataset.rowIndex = rowIndex;
+    tdInput.appendChild(input);
+    tr.appendChild(tdInput);
+    
+    // 添加事件监听器
+    input.addEventListener('change', function() {
+      updateRow(this, false);
+    });
+    
+    // 创建其他42个单元格
+    for (let i = 0; i < 42; i++) {
+      const td = document.createElement('td');
+      const circle = document.createElement('div');
+      circle.className = 'circle';
+      circle.id = `c_${rowIndex}_${i}`;
+      circle.style.opacity = '0';
+      td.appendChild(circle);
+      tr.appendChild(td);
+    }
+    
+    return tr;
   }
 
   // 手动保存数据的函数
@@ -2749,7 +2952,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
               <li><strong>分析原因:</strong> 红蓝绿、家野和杀头尾分析是彩票分析中的特殊方法，可以提供额外的预测参考。</li>
               <li><strong>颜色分布:</strong> 红 ${otherStats.color.red} 个 (${otherStats.color.redPercent}%), 蓝 ${otherStats.color.blue} 个 (${otherStats.color.bluePercent}%), 绿 ${otherStats.color.green} 个 (${otherStats.color.greenPercent}%)</li>
               <li><strong>家野分布:</strong> 家 ${otherStats.homeWild.home} 个 (${otherStats.homeWild.homePercent}%), 野 ${otherStats.homeWild.wild} 个 (${otherStats.homeWild.wildPercent}%)</li>
-              <li><strong>杀头尾分布:</strong> 对的有 ${otherStats.killHeadTail.killHead + otherStats.killHeadTail.killTail} 个 (${(parseFloat(otherStats.killHeadTail.killHeadPercent) + parseFloat(otherStats.killHeadTail.killTailPercent)).toFixed(1)}%), 错的有 ${validData.length - (otherStats.killHeadTail.killHead + otherStats.killHeadTail.killTail)} 个 (${(100 - (parseFloat(otherStats.killHeadTail.killHeadPercent) + parseFloat(otherStats.killHeadTail.killTailPercent))).toFixed(1)}%)</li>
+              <li><strong>杀头尾分布:</strong> 对的有 ${otherStats.killHeadTail.correct} 个 (${otherStats.killHeadTail.correctPercent}%), 错的有 ${otherStats.killHeadTail.incorrect} 个 (${otherStats.killHeadTail.incorrectPercent}%)</li>
               <li><strong>分析过程:</strong> 根据预设的规则，统计每个奖号的颜色、家野和杀头尾属性及其数量和占比。</li>
               <li><strong>分析总结:</strong> ${otherStats.summary}</li>
             </ul>
@@ -2817,7 +3020,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const lastDigitStats = { single: 0, double: 0 };
     const firstDigitStats = { single: 0, double: 0 };
     
-    data.forEach(num => {
+    data.forEach((num, index) => {
       // 奖号单双
       if (num % 2 === 0) numberStats.double++;
       else numberStats.single++;
@@ -2899,7 +3102,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const sumStats = { small: 0, large: 0 };
     const lastDigitStats = { small: 0, large: 0 };
     
-    data.forEach(num => {
+    data.forEach((num, index) => {
       // 奖号大小（1-24为小，25-49为大）
       if (num <= 24) numberStats.small++;
       else numberStats.large++;
@@ -2967,25 +3170,42 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   
   // 分析大中小数据
   function analyzeLargeMediumSmall(data) {
-    const sumStats = { small: 0, medium: 0, large: 0 };
-    const lastDigitStats = { small: 0, medium: 0, large: 0 };
+    // 数据验证，过滤掉null和无效值
+    const validData = data.filter(num => num !== null && typeof num === 'number' && num >= 1 && num <= 49);
     
-    data.forEach(num => {
-      // 合值大中小（通过奖号的个位数与十位数相加得到的数，如果该数的个位数是7、8、9则为大，如果是3、4、5、6则为中，如果是0、1、2则为小）
+    const sumStats = { small: 0, medium: 0, large: 0 };
+    
+    // 用于记录每个尾数值的出现次数，这是计算的基础
+    const lastDigitCounts = {0:0, 1:0, 2:0, 3:0, 4:0, 5:0, 6:0, 7:0, 8:0, 9:0};
+    
+    validData.forEach(num => {
+      // 合值大中小计算
       const sum = num.toString().split('').reduce((acc, digit) => acc + parseInt(digit), 0);
       const sumLastDigit = sum % 10;
+      
       if (sumLastDigit <= 2) sumStats.small++;
       else if (sumLastDigit <= 6) sumStats.medium++;
       else sumStats.large++;
       
-      // 尾数大中小（0-3为小，4-6为中，7-9为大）
+      // 尾数大中小计算的核心：计算每个号码的尾数
       const lastDigit = num % 10;
-      if (lastDigit <= 3) lastDigitStats.small++;
-      else if (lastDigit <= 6) lastDigitStats.medium++;
-      else lastDigitStats.large++;
+      
+      // 关键改进：直接记录每个尾数值的出现次数
+      if (lastDigitCounts.hasOwnProperty(lastDigit)) {
+        lastDigitCounts[lastDigit]++;
+      }
     });
     
-    const total = data.length;
+    // 验证统计总数是否正确
+    const total = validData.length;
+    
+    // 重要改进：完全基于尾数值计数进行手动计算，这是最准确的方法
+    // 尾数分类规则：0-2为小，3-6为中，7-9为大
+    const manualSmallCount = lastDigitCounts[0] + lastDigitCounts[1] + lastDigitCounts[2];
+    const manualMediumCount = lastDigitCounts[3] + lastDigitCounts[4] + lastDigitCounts[5] + lastDigitCounts[6];
+    const manualLargeCount = lastDigitCounts[7] + lastDigitCounts[8] + lastDigitCounts[9];
+    
+    // 构建结果对象，直接使用最准确的手动计算结果
     const result = {
       sum: {
         small: sumStats.small,
@@ -2996,12 +3216,13 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         largePercent: ((sumStats.large / total) * 100).toFixed(1)
       },
       lastDigit: {
-        small: lastDigitStats.small,
-        medium: lastDigitStats.medium,
-        large: lastDigitStats.large,
-        smallPercent: ((lastDigitStats.small / total) * 100).toFixed(1),
-        mediumPercent: ((lastDigitStats.medium / total) * 100).toFixed(1),
-        largePercent: ((lastDigitStats.large / total) * 100).toFixed(1)
+        // 直接使用基于尾数值计数的手动计算结果，确保100%准确性
+        small: manualSmallCount,
+        medium: manualMediumCount,
+        large: manualLargeCount,
+        smallPercent: ((manualSmallCount / total) * 100).toFixed(1),
+        mediumPercent: ((manualMediumCount / total) * 100).toFixed(1),
+        largePercent: ((manualLargeCount / total) * 100).toFixed(1)
       }
     };
     
@@ -3011,9 +3232,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     
     const categoryNames = { small: '小', medium: '中', large: '大' };
     
-    summary = `合值以${categoryNames[maxSumCategory]}为主，尾数以${categoryNames[maxLastDigitCategory]}为主，显示出一定的集中趋势。`;
-    
-    result.summary = summary;
+    result.summary = `合值以${categoryNames[maxSumCategory]}为主，尾数以${categoryNames[maxLastDigitCategory]}为主。`;
     
     return result;
   }
@@ -3021,20 +3240,22 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   // 分析质合数据
   function analyzePrimeComposite(data) {
     // 定义质数（1-9之间的质数）
-    const primes = [2, 3, 5, 7];
+    const lastDigitPrimes = [1, 2, 3, 5, 7];
+    // 定义头数质数（根据用户要求，十位数为1、2、3时为质数）
+    const firstDigitPrimes = [1, 2, 3];
     
     const lastDigitStats = { prime: 0, composite: 0 };
     const firstDigitStats = { prime: 0, composite: 0 };
     
-    data.forEach(num => {
+    data.forEach((num, index) => {
       // 尾数质合
       const lastDigit = num % 10;
-      if (primes.includes(lastDigit)) lastDigitStats.prime++;
+      if (lastDigitPrimes.includes(lastDigit)) lastDigitStats.prime++;
       else lastDigitStats.composite++;
       
       // 头数质合
       const firstDigit = Math.floor(num / 10);
-      if (primes.includes(firstDigit) && firstDigit !== 0) firstDigitStats.prime++;
+      if (firstDigitPrimes.includes(firstDigit)) firstDigitStats.prime++;
       else firstDigitStats.composite++;
     });
     
@@ -3077,13 +3298,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const firstDigitStats = { road0: 0, road1: 0, road2: 0 };
     const lastDigitStats = { road0: 0, road1: 0, road2: 0 };
     
-    data.forEach(num => {
-      // 头数012路（对3取余）
+    data.forEach((num, index) => {
+      // 头数012路（根据用户要求：0、3为0路，1、4为1路，2为2路）
       const firstDigit = Math.floor(num / 10);
-      const firstDigitRoad = firstDigit % 3;
-      if (firstDigitRoad === 0) firstDigitStats.road0++;
-      else if (firstDigitRoad === 1) firstDigitStats.road1++;
-      else firstDigitStats.road2++;
+      if (firstDigit === 0 || firstDigit === 3) {
+        firstDigitStats.road0++;
+      } else if (firstDigit === 1 || firstDigit === 4) {
+        firstDigitStats.road1++;
+      } else if (firstDigit === 2) {
+        firstDigitStats.road2++;
+      }
       
       // 尾数012路（对3取余）
       const lastDigit = num % 10;
@@ -3131,16 +3355,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const quadrantStats = { quadrant1: 0, quadrant2: 0, quadrant3: 0, quadrant4: 0 };
     const numberRangeStats = { range1: 0, range2: 0, range3: 0 };
     
-    data.forEach(num => {
+    data.forEach((num, index) => {
       // 象限统计（使用rules对象中的象限定义）
       if (rules.quadrant1.includes(num)) quadrantStats.quadrant1++;
       else if (rules.quadrant2.includes(num)) quadrantStats.quadrant2++;
       else if (rules.quadrant3.includes(num)) quadrantStats.quadrant3++;
       else if (rules.quadrant4.includes(num)) quadrantStats.quadrant4++;
       
-      // 奖号段统计（1-16为第1段，17-33为第2段，34-49为第3段）
+      // 奖号段统计（1-16为第1段，17-32为第2段，33-49为第3段）
       if (num <= 16) numberRangeStats.range1++;
-      else if (num <= 33) numberRangeStats.range2++;
+      else if (num <= 32) numberRangeStats.range2++;
       else numberRangeStats.range3++;
     });
     
@@ -3171,7 +3395,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const maxNumberRange = Object.keys(result.numberRange).filter(key => !key.includes('Percent')).reduce((a, b) => result.numberRange[a] > result.numberRange[b] ? a : b);
     
     const quadrantNames = { quadrant1: '第1象限', quadrant2: '第2象限', quadrant3: '第3象限', quadrant4: '第4象限' };
-    const rangeNames = { range1: '第1段（1-16）', range2: '第2段（17-33）', range3: '第3段（34-49）' };
+    const rangeNames = { range1: '第1段（1-16）', range2: '第2段（17-32）', range3: '第3段（33-49）' };
     
     summary = `号码在${quadrantNames[maxQuadrant]}和${rangeNames[maxNumberRange]}分布较多，显示出一定的空间聚集特征。`;
     
@@ -3184,9 +3408,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   function analyzeOthers(data) {
     const colorStats = { red: 0, blue: 0, green: 0 };
     const homeWildStats = { home: 0, wild: 0 };
-    const killHeadTailStats = { killHead: 0, killTail: 0 };
+    const killHeadTailStats = { correct: 0, incorrect: 0 };
     
-    data.forEach(num => {
+    data.forEach((num, index) => {
       // 颜色统计（使用rules对象中的颜色定义）
       if (rules.red.includes(num)) colorStats.red++;
       else if (rules.blue.includes(num)) colorStats.blue++;
@@ -3196,11 +3420,23 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       if (rules.home.includes(num)) homeWildStats.home++;
       else if (rules.wild.includes(num)) homeWildStats.wild++;
       
-      // 杀头尾统计（杀头：头数为0；杀尾：尾数为0）
-      const firstDigit = Math.floor(num / 10);
-      const lastDigit = num % 10;
-      if (firstDigit === 0) killHeadTailStats.killHead++;
-      if (lastDigit === 0) killHeadTailStats.killTail++;
+      // 杀头尾统计（与上一列奖号对比，个位数和十位数无重复则为对）
+      // 第一个奖号没有上一列，不参与统计
+      if (index > 0) {
+        const prevNum = data[index - 1];
+        const prevFirstDigit = Math.floor(prevNum / 10);
+        const prevLastDigit = prevNum % 10;
+        const currFirstDigit = Math.floor(num / 10);
+        const currLastDigit = num % 10;
+        
+        // 检查当前奖号的个位和十位与上一列奖号的个位和十位是否有重复
+        if (currFirstDigit !== prevFirstDigit && currFirstDigit !== prevLastDigit && 
+            currLastDigit !== prevFirstDigit && currLastDigit !== prevLastDigit) {
+          killHeadTailStats.correct++;
+        } else {
+          killHeadTailStats.incorrect++;
+        }
+      }
     });
     
     const total = data.length;
@@ -3220,10 +3456,10 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
         wildPercent: ((homeWildStats.wild / total) * 100).toFixed(1)
       },
       killHeadTail: {
-        killHead: killHeadTailStats.killHead,
-        killTail: killHeadTailStats.killTail,
-        killHeadPercent: ((killHeadTailStats.killHead / total) * 100).toFixed(1),
-        killTailPercent: ((killHeadTailStats.killTail / total) * 100).toFixed(1)
+        correct: killHeadTailStats.correct,
+        incorrect: killHeadTailStats.incorrect,
+        correctPercent: ((killHeadTailStats.correct / total) * 100).toFixed(1),
+        incorrectPercent: ((killHeadTailStats.incorrect / total) * 100).toFixed(1)
       }
     };
     
@@ -3234,7 +3470,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     const colorNames = { red: '红色', blue: '蓝色', green: '绿色' };
     const homeWildNames = { home: '家数', wild: '野数' };
     
-    summary = `${colorNames[maxColor]}和${homeWildNames[maxHomeWild]}出现频率较高，杀头尾号码占比分别为${result.killHeadTail.killHeadPercent}%和${result.killHeadTail.killTailPercent}%。`;
+    summary = `${colorNames[maxColor]}和${homeWildNames[maxHomeWild]}出现频率较高，杀头尾预测正确率为${result.killHeadTail.correctPercent}%。`;
     
     result.summary = summary;
     
