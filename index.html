@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=2.0, user-scalable=yes"/>
   <title>奖号预测表 - PDF导出与冻结表头</title>
   
   <!-- 添加Supabase客户端库 -->
@@ -455,6 +455,15 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       background-color: #f9f9f9;
       overflow-x: hidden;
     }
+    
+    /* PC端样式优化 - 隐藏拖动控件 */
+    @media (min-width: 415px) {
+      /* 隐藏表格长度调整控件 */
+      .table-resizer {
+        display: none;
+      }
+    }
+    
     .warning-banner {
       background-color: #e9ecef;
       color: #dc3545;
@@ -579,11 +588,46 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     }
     /* 小屏优化 */
     @media (max-width: 768px) {
-      /* 允许页面内容滚动，但禁止双击缩放 */
+      /* 默认禁止页面滚动，但允许表格内部滚动 */
       html, body {
         touch-action: manipulation;
-        height: auto;
-        overflow-x: hidden;
+        height: 100vh;
+        overflow: hidden;
+      }
+      
+      /* 仅当打开下拉菜单等时允许页面滚动 */
+      .dropdown-active body {
+        overflow: auto;
+      }
+      
+      /* 趋势分析页面需要正常滚动 - 高优先级样式 */
+      body.trend-page-active {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        height: auto !important;
+        min-height: 100vh !important;
+      }
+      
+      body.trend-page-active html {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        height: auto !important;
+        min-height: 100vh !important;
+      }
+      
+      /* 确保趋势分析页面容器可以滚动 */
+      #trend-page {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        height: auto !important;
+        min-height: 100vh !important;
+      }
+      
+      /* 确保趋势分析容器可以滚动 */
+      body.trend-page-active .trend-analysis-container {
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        height: auto !important;
       }
       
       /* 页面容器样式 */
@@ -631,14 +675,185 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       }
     }
     
+    /* 全局表格样式 - 适用于所有设备 */
+    
+    /* 确保表格单元格边框合并 */
+    table {
+      border-collapse: collapse;
+      position: relative;
+    }
+    
+    /* 设置表头背景色为浅灰色 */
+    thead {
+      background-color: #f5f5f5;
+    }
+    
+    /* 确保所有表格单元格都有边框，防止滑动错位 */
+    th, td {
+      border: 1px solid #ddd;
+    }
+    
+    /* 表头样式基础设置 */
+    th {
+      background-color: #f5f5f5;
+    }
+    
+    /* 表格左右滚动时，期号和奖号列冻结显示 - 适用于所有行 */
+    /* 第一列（期号）的冻结样式 - 超高层级确保边框始终可见 */
+    th:nth-child(1), td:nth-child(1) {
+      position: sticky !important;
+      left: 0 !important;
+      z-index: 9999 !important; /* 超高层级，确保在所有内容上方 */
+      background-color: #f5f5f5 !important;
+      border-right: 3px solid #666 !important; /* 加粗竖线 */
+      box-shadow: 2px 0 0 #666; /* 添加阴影作为额外的视觉边框层 */
+      min-width: 60px;
+      width: 60px;
+    }
+    
+    /* 第二列（奖号）的冻结样式 - 超高层级确保边框始终可见 */
+    th:nth-child(2), td:nth-child(2) {
+      position: sticky !important;
+      left: 60px !important;
+      z-index: 9998 !important; /* 超高层级，确保在所有内容上方 */
+      background-color: #f5f5f5 !important;
+      border-right: 3px solid #666 !important; /* 加粗竖线 */
+      box-shadow: 2px 0 0 #666; /* 添加阴影作为额外的视觉边框层 */
+    }
+    
+    /* 期号和奖号表头单元格的特殊优化 - 上下滑动时固定在顶部 */
+    /* 第一行表头的期号和奖号单元格 - 超高层级确保边框始终可见 */
+    thead tr:first-child th:nth-child(1),
+    thead tr:first-child th:nth-child(2) {
+      position: sticky !important;
+      top: 0 !important;
+      z-index: 10000 !important; /* 最高层级，确保在所有内容上方 */
+      background-color: #f5f5f5 !important;
+      border-right: 3px solid #666 !important; /* 加粗竖线 */
+      box-shadow: 2px 0 0 #666; /* 添加阴影作为额外的视觉边框层 */
+    }
+    
+    /* 第一行表头的期号单元格特定设置 */
+    thead tr:first-child th:nth-child(1) {
+      left: 0 !important;
+    }
+    
+    /* 第一行表头的奖号单元格特定设置 */
+    thead tr:first-child th:nth-child(2) {
+      left: 60px !important;
+      z-index: 9999 !important;
+    }
+    
+    /* 第二行表头的期号和奖号单元格 - 超高层级确保边框始终可见 */
+    thead tr:nth-child(2) th:nth-child(1),
+    thead tr:nth-child(2) th:nth-child(2) {
+      position: sticky !important;
+      top: 30px !important; /* 第二行表头位置 */
+      background-color: #f5f5f5 !important;
+      border-right: 3px solid #666 !important; /* 加粗竖线 */
+      box-shadow: 2px 0 0 #666; /* 添加阴影作为额外的视觉边框层 */
+    }
+    
+    /* 第二行表头的期号单元格特定设置 */
+    thead tr:nth-child(2) th:nth-child(1) {
+      left: 0 !important;
+      z-index: 9998 !important;
+    }
+    
+    /* 第二行表头的奖号单元格特定设置 */
+    thead tr:nth-child(2) th:nth-child(2) {
+      left: 60px !important;
+      z-index: 9997 !important;
+    }
+    
+    /* 确保表格内容不会覆盖冻结列 */
+    td:not(:nth-child(1)):not(:nth-child(2)) {
+      position: relative;
+      z-index: 1;
+    }
+    
+    /* 确保其他表头单元格不会影响冻结效果 */
+    thead th:not(:nth-child(1)):not(:nth-child(2)) {
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+    
+    thead tr:nth-child(2) th:not(:nth-child(1)):not(:nth-child(2)) {
+      position: sticky;
+      top: 30px;
+      z-index: 4;
+    }
+    
+    /* 表格容器设置为相对定位，为绝对定位元素提供参照 */
+    .table-container {
+      position: relative;
+      overflow: auto;
+    }
+    
+    /* 表格内容区域设置 */
+    .table-wrapper {
+      position: relative;
+      overflow: auto;
+    }
+    
+    /* 表格容器基础样式 */
+    .table-container {
+      position: relative;
+    }
+    
     /* 针对iPhone 11/13的Safari浏览器的特定优化 - 主要调整表格长度 */
     @media (max-width: 414px) {
       /* 减小表格长度，确保在iPhone屏幕上完整显示 */
       .table-wrapper {
-        max-height: calc(8 * 30px + 60px); /* 设置合适的高度 */
+        max-height: calc(9 * 30px + 60px); /* 增加一行显示 */
         width: 100%;
         margin: 0 auto;
         overflow: auto; /* 允许滚动 */
+        transition: max-height 0.3s ease;
+      }
+      
+      /* 表格长度调整控件样式 */
+      .table-resizer {
+        width: 100%;
+        height: 10px;
+        background-color: #e0e0e0;
+        border-radius: 5px;
+        margin: 10px 0;
+        position: relative;
+        cursor: grab;
+        touch-action: none;
+      }
+      
+      .table-resizer:active {
+        cursor: grabbing;
+      }
+      
+      .table-resizer-handle {
+        min-width: 150px;
+        padding: 2px 10px;
+        height: 24px;
+        background-color: #4CAF50;
+        border-radius: 12px;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        font-size: 12px;
+        font-weight: bold;
+      }
+      
+      /* 表格容器样式调整 */
+      .table-container {
+        display: flex;
+        flex-direction: column;
+        width: 100%;
+        position: relative;
       }
       
       /* 优化表格样式 */
@@ -648,20 +863,45 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       }
       
       th, td {
-        font-size: 9px;
         height: 30px;
         padding: 2px;
       }
       
-      /* 调整表头位置 */
-      thead tr:nth-child(1) th {
-        position: sticky;
-        top: 0;
+      /* 设置单元格字体大小为12px */
+      td {
+        font-size: 12px;
       }
       
-      thead tr:nth-child(2) th {
+      /* 设置表头字体大小为12px */
+      th {
+        font-size: 12px;
+      }
+      
+      /* 缩小奖号单元格宽度为4个字符宽度并确保正确的冻结定位 */
+      th:nth-child(2), td:nth-child(2) {
+        width: 4ch;
+        max-width: 4ch;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      
+      /* 确保奖号输入框字体大小为12px */
+      td:nth-child(2) input[type="number"] {
+        font-size: 12px;
+      }
+      
+      /* 调整表头位置 - 仅适用于非冻结列 */
+      thead tr:nth-child(1) th:not(:nth-child(1)):not(:nth-child(2)) {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+      }
+      
+      thead tr:nth-child(2) th:not(:nth-child(1)):not(:nth-child(2)) {
         position: sticky;
         top: 30px;
+        z-index: 4;
       }
       
       /* 优化按钮显示 */
@@ -727,12 +967,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       
       /* 表头样式优化 */
       thead tr:nth-child(1) th {
-        font-size: 7px;
+        font-size: 12px;
         padding: 1px;
       }
       
       thead tr:nth-child(2) th {
-        font-size: 7px;
+        font-size: 12px;
         padding: 1px;
         top: 24px;
       }
@@ -849,8 +1089,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   <div id="saveTimestamp"></div>
 </div>
 
-<div class="table-wrapper" id="tableWrapper">
-  <table id="dataTable">
+<div class="table-container">
+  <div class="table-wrapper" id="tableWrapper">
+    <table id="dataTable">
     <thead>
       <tr>
         <th rowspan="2">期号</th>
@@ -920,6 +1161,11 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     </tbody>
   </table>
   <svg id="lineLayer" style="position: absolute; top: 0; left: 0; pointer-events: none; width: 100%; height: 100%;"></svg>
+</div>
+  <!-- 表格长度调整控件 -->
+  <div class="table-resizer" id="tableResizer">
+    <div class="table-resizer-handle">上下拖动调整表格长度</div>
+  </div>
 </div>
 
 <style>
@@ -1171,20 +1417,40 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
   // 点击切换更多功能菜单显示/隐藏
   function toggleDropdown(dropdownElement) {
     const dropdownContent = dropdownElement.querySelector('.dropdown-content');
-    dropdownContent.style.display = dropdownContent.style.display === 'block' ? 'none' : 'block';
+    const isDisplayed = dropdownContent.style.display === 'block';
+    
+    if (isDisplayed) {
+      dropdownContent.style.display = 'none';
+      document.body.classList.remove('dropdown-active');
+    } else {
+      dropdownContent.style.display = 'block';
+      document.body.classList.add('dropdown-active');
+    }
   }
   
   // 点击页面其他地方关闭下拉菜单
   document.addEventListener('click', function(event) {
     const dropdowns = document.querySelectorAll('.dropdown');
+    let anyDropdownOpen = false;
+    
     dropdowns.forEach(dropdown => {
       const dropdownContent = dropdown.querySelector('.dropdown-content');
       const button = dropdown.querySelector('button');
       
-      if (!dropdown.contains(event.target) && dropdownContent.style.display === 'block') {
-        dropdownContent.style.display = 'none';
+      if (dropdownContent.style.display === 'block') {
+        anyDropdownOpen = true;
+        
+        if (!dropdown.contains(event.target)) {
+          dropdownContent.style.display = 'none';
+          anyDropdownOpen = false;
+        }
       }
     });
+    
+    // 如果没有打开的下拉菜单，移除active类
+    if (!anyDropdownOpen) {
+      document.body.classList.remove('dropdown-active');
+    }
   });
   
   const START_ISSUE = 171;
@@ -2809,9 +3075,34 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       activeLink.classList.add('active');
     }
     
-    // 如果切换到趋势分析页面，需要初始化数据
+    // 管理趋势分析页面的滚动权限
     if (pageId === 'trend-page') {
       initTrendAnalysis();
+      // 添加trend-page-active类允许body和html滚动
+      document.body.classList.add('trend-page-active');
+      // 强制执行滚动样式
+      document.body.style.overflowY = 'auto';
+      document.body.style.WebkitOverflowScrolling = 'touch';
+      document.body.style.height = 'auto';
+      document.body.style.minHeight = '100vh';
+      document.documentElement.style.overflowY = 'auto';
+      document.documentElement.style.WebkitOverflowScrolling = 'touch';
+      document.documentElement.style.height = 'auto';
+      document.documentElement.style.minHeight = '100vh';
+      console.log('Switched to trend page - scrolling enabled');
+    } else {
+      // 移除trend-page-active类，恢复默认滚动行为
+      document.body.classList.remove('trend-page-active');
+      // 恢复默认样式
+      document.body.style.overflowY = '';
+      document.body.style.WebkitOverflowScrolling = '';
+      document.body.style.height = '';
+      document.body.style.minHeight = '';
+      document.documentElement.style.overflowY = '';
+      document.documentElement.style.WebkitOverflowScrolling = '';
+      document.documentElement.style.height = '';
+      document.documentElement.style.minHeight = '';
+      console.log('Switched away from trend page - scrolling restricted');
     }
   }
   
@@ -4227,6 +4518,76 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     return text.substring(0, 197) + '...';
   }
   
+  /* 启用趋势分析页面滚动的函数 */
+  function enableTrendPageScrolling() {
+    // 添加trend-page-active类
+    document.body.classList.add('trend-page-active');
+    
+    // 强制执行滚动样式
+    document.body.style.overflowY = 'auto';
+    document.body.style.WebkitOverflowScrolling = 'touch';
+    document.body.style.height = 'auto';
+    document.body.style.minHeight = '100vh';
+    
+    document.documentElement.style.overflowY = 'auto';
+    document.documentElement.style.WebkitOverflowScrolling = 'touch';
+    document.documentElement.style.height = 'auto';
+    document.documentElement.style.minHeight = '100vh';
+    
+    // 确保趋势分析页面容器也有正确的样式
+    const trendPage = document.getElementById('trend-page');
+    if (trendPage) {
+      trendPage.style.overflowY = 'auto';
+      trendPage.style.WebkitOverflowScrolling = 'touch';
+      trendPage.style.height = 'auto';
+      trendPage.style.minHeight = '100vh';
+    }
+    
+    const trendContainer = document.querySelector('.trend-analysis-container');
+    if (trendContainer) {
+      trendContainer.style.overflowY = 'auto';
+      trendContainer.style.WebkitOverflowScrolling = 'touch';
+      trendContainer.style.height = 'auto';
+    }
+    
+    console.log('Trend page scrolling enabled');
+  }
+  
+  /* 禁用趋势分析页面滚动的函数 */
+  function disableTrendPageScrolling() {
+    // 移除trend-page-active类
+    document.body.classList.remove('trend-page-active');
+    
+    // 恢复默认样式
+    document.body.style.overflowY = '';
+    document.body.style.WebkitOverflowScrolling = '';
+    document.body.style.height = '';
+    document.body.style.minHeight = '';
+    
+    document.documentElement.style.overflowY = '';
+    document.documentElement.style.WebkitOverflowScrolling = '';
+    document.documentElement.style.height = '';
+    document.documentElement.style.minHeight = '';
+    
+    // 恢复趋势分析页面容器的默认样式
+    const trendPage = document.getElementById('trend-page');
+    if (trendPage) {
+      trendPage.style.overflowY = '';
+      trendPage.style.WebkitOverflowScrolling = '';
+      trendPage.style.height = '';
+      trendPage.style.minHeight = '';
+    }
+    
+    const trendContainer = document.querySelector('.trend-analysis-container');
+    if (trendContainer) {
+      trendContainer.style.overflowY = '';
+      trendContainer.style.WebkitOverflowScrolling = '';
+      trendContainer.style.height = '';
+    }
+    
+    console.log('Trend page scrolling disabled');
+  }
+  
   // 初始化函数
   async function initApp() {
     // 初始化表格
@@ -4254,6 +4615,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       console.error('Supabase连接检查时出错:', error);
       updateConnectionStatus(false);
     }
+    
+    // 检查当前是否显示趋势分析页面，如果是，启用滚动
+    const trendPage = document.getElementById('trend-page');
+    if (trendPage && trendPage.classList.contains('active')) {
+      enableTrendPageScrolling();
+    }
   }
   
   // 重写window load事件
@@ -4262,10 +4629,16 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 </div>
 
+<!-- 滚动问题修复脚本 - 应在所有其他脚本之后加载 -->
+<script src="fix-scroll.js"></script>
+
+
 <!-- 趋势分析与预测页面 -->
 <div id="trend-page" class="page-container">
   <div class="trend-analysis-container">
     <h2>📈 趋势分析与预测</h2>
+    
+
     
     <div class="chart-container">
       <canvas id="frequencyChart"></canvas>
@@ -4603,6 +4976,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     @media (max-width: 768px) {
       .trend-analysis-container {
         padding: 10px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
       }
       
       .chart-container {
@@ -4617,6 +4992,12 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
       
       .predicted-number {
         font-size: 20px;
+      }
+      
+      /* 确保整个页面可以滚动 */
+      #trend-page {
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
       }
     }
     
@@ -4708,6 +5089,103 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
     }
   </style>
 </div>
+
+  <!-- 表格长度调整功能实现 -->
+  <script>
+    // 表格长度调整功能
+    document.addEventListener('DOMContentLoaded', function() {
+      // 检测是否为移动设备
+      const isMobile = window.innerWidth <= 768 || ('ontouchstart' in window) || navigator.maxTouchPoints > 0;
+      
+      if (isMobile) {
+        const tableResizer = document.getElementById('tableResizer');
+        const tableWrapper = document.getElementById('tableWrapper');
+        
+        // 确保元素存在
+        if (!tableResizer || !tableWrapper) {
+          console.error('表格调整控件或表格容器未找到');
+          return;
+        }
+        
+        let isDragging = false;
+        let startY = 0;
+        let startHeight = 0;
+        
+        // 初始高度设置
+        const initialHeight = tableWrapper.style.maxHeight || 'calc(9 * 30px + 60px)';
+        tableWrapper.style.maxHeight = initialHeight;
+        
+        // 拖动开始
+        function startResize(e) {
+          // 对于touchstart事件，不要阻止默认行为，以便页面可以正常滚动
+          // 只有mousedown事件需要阻止默认行为
+          if (e.type === 'mousedown') {
+            e.preventDefault();
+          }
+          
+          isDragging = true;
+          startY = e.type === 'mousedown' ? e.clientY : e.touches[0].clientY;
+          
+          // 获取当前表格高度（像素值）
+          const currentHeight = window.getComputedStyle(tableWrapper).maxHeight;
+          startHeight = parseFloat(currentHeight);
+          
+          // 添加拖动时的样式
+          tableResizer.style.backgroundColor = '#ccc';
+          
+          // 添加事件监听
+          document.addEventListener('mousemove', resizeTable);
+          document.addEventListener('touchmove', resizeTable, { passive: true });
+          document.addEventListener('mouseup', stopResize);
+          document.addEventListener('touchend', stopResize);
+          document.addEventListener('touchcancel', stopResize);
+        }
+        
+        // 调整表格高度
+        function resizeTable(e) {
+          if (!isDragging) return;
+          
+          // 获取触摸点信息
+          const currentY = e.type === 'mousemove' ? e.clientY : (e.touches && e.touches[0] ? e.touches[0].clientY : 0);
+          const diffY = currentY - startY;
+          
+          // 计算新高度，限制最小和最大值
+          const minHeight = 200; // 最小高度限制
+          // 优化最大高度计算，确保不会影响页面滚动
+          const maxHeight = Math.min(window.innerHeight - 150, document.documentElement.scrollHeight - 50);
+          const currentHeight = parseFloat(window.getComputedStyle(tableWrapper).maxHeight) || startHeight;
+          let newHeight = currentHeight + diffY;
+          newHeight = Math.max(minHeight, Math.min(maxHeight, newHeight));
+          
+          // 更新表格高度
+          tableWrapper.style.maxHeight = newHeight + 'px';
+        }
+        
+        // 停止拖动
+        function stopResize() {
+          if (!isDragging) return;
+          
+          // 确保重置状态
+          isDragging = false;
+          startY = 0;
+          
+          // 恢复样式
+          tableResizer.style.backgroundColor = '#e0e0e0';
+          
+          // 移除事件监听
+          document.removeEventListener('mousemove', resizeTable);
+          document.removeEventListener('touchmove', resizeTable);
+          document.removeEventListener('mouseup', stopResize);
+          document.removeEventListener('touchend', stopResize);
+          document.removeEventListener('touchcancel', stopResize);
+        }
+        
+        // 添加事件监听，使用passive:true确保不会干扰页面滚动
+        tableResizer.addEventListener('mousedown', startResize);
+        tableResizer.addEventListener('touchstart', startResize, { passive: true });
+      }
+    });
+  </script>
 
 </body>
 </html>
